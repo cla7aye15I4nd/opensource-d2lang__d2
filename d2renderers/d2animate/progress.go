@@ -270,11 +270,15 @@ func svgFooter(css *bytes.Buffer, hash string, footer image.Rectangle, totalMS i
 		if night != canvas {
 			fmt.Fprintf(css, "@media screen and (prefers-color-scheme:dark){#%s>feFlood{flood-color:%s}}", id, night)
 		}
-		filter := fmt.Sprintf(progressFilter, id, footer.Min.Y, footer.Dx(), footer.Dy(), ProgressGap, canvas, footer.Min.Y+ProgressGap, footer.Dy()-ProgressGap)
+		// Keep the sample band separated from the width mask. If they touch,
+		// antialiasing at fractional scales adds the sample's edge to
+		// SourceAlpha, painting a full-width hairline ahead of the clock.
+		sampleY := footer.Min.Y - ProgressGap
+		filter := fmt.Sprintf(progressFilter, id, sampleY, footer.Dx(), footer.Dy()+ProgressGap, 2*ProgressGap-1, canvas, footer.Min.Y+ProgressGap, footer.Dy()-ProgressGap)
 		// Keep the ordinary matte outside the filter. WebKit can cull a
 		// zero-width marker's filtered group at a navigation boundary.
-		fmt.Fprintf(css, ".d2-ink-source-%s rect:not([aria-hidden]){height:%dpx}", hash, ProgressGap)
-		return matteGroup + filter + group + ` d2-ink-source-` + hash + `" aria-hidden="true" pointer-events="none" filter="url(#` + id + `)">` + body.String() + line + "</g>", linkedMatte, nil
+		fmt.Fprintf(css, ".%[1]s rect:not([aria-hidden]){y:%[2]dpx;height:%[3]dpx}@media(prefers-reduced-motion:reduce){.%[1]s{display:none}}", id, sampleY, ProgressGap)
+		return matteGroup + filter + group + " " + id + `" aria-hidden="true" pointer-events="none" filter="url(#` + id + `)">` + body.String() + line + "</g>", linkedMatte, nil
 	}
 	if body.Len() == 0 {
 		return line, false, nil
@@ -282,8 +286,8 @@ func svgFooter(css *bytes.Buffer, hash string, footer image.Rectangle, totalMS i
 	return matteGroup + line, linkedMatte, nil
 }
 
-// Use the composed gap as the input to the ink calculation. Work is restricted
-// to the footer; its SourceAlpha in the last few rows holds the line's width.
+// Use the composed matte as the input to the ink calculation. Work is restricted
+// to the footer and one sample band; the last rows hold only the line mask.
 // Blend the matte with the reference canvas in sRGB before computing its ink.
 const progressFilter = `<defs><filter id="%[1]s" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB" x="0" y="%[2]d" width="%[3]d" height="%[4]d">` +
 	`<feOffset in="SourceGraphic" dy="%[5]d" result="matte"/><feFlood flood-color="%[6]s"/><feComposite in="matte" operator="over" result="bg"/>` +

@@ -411,6 +411,21 @@ async function checkLayerRoute(page) {
   assert.equal(await footerColor(page), "e3ebf2", "the shipping footer preserves transparency");
   assert.equal(await footerColor(page, true), "000000", "transparent shipping uses the theme canvas to pick ink");
 
+  // At a fractional display scale, the edge of the filter's sample band must
+  // not contribute a row of ink ahead of the actual progress marker.
+  await seek(page, 4500);
+  const untouched = await page.locator(progressSelector).evaluate((line) => {
+    const bounds = line.getBoundingClientRect();
+    const svg = line.ownerSVGElement;
+    const point = new DOMPoint(svg.viewBox.baseVal.width - 4, 0).matrixTransform(svg.getScreenCTM());
+    return { x: Math.floor(point.x), top: Math.floor(bounds.top), bottom: Math.floor(bounds.bottom) };
+  });
+  const strip = PNG.sync.read(await page.screenshot());
+  for (let y = untouched.top; y < untouched.bottom; y++) {
+    const off = 4 * (y * strip.width + untouched.x);
+    assert.equal(strip.data.toString("hex", off, off + 3), "e4d0df", `ink ahead of the marker at row ${y}`);
+  }
+
   async function accessibleBoard(board) {
     await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(resolve)));
     const snapshot = await page.locator("svg").first().ariaSnapshot();
