@@ -80,7 +80,7 @@ steps: {
 		}
 		first, quarter, mid := frames[0], frames[len(frames)/4], frames[len(frames)/2]
 		if tweenText(t, first, "bar") != "65%" || tweenText(t, quarter, "bar") != "49%" ||
-			tweenText(t, quarter, "bar", "style", "fill") != "linear-gradient(to right, seagreen 49%, transparent 49%)" ||
+			tweenText(t, quarter, "bar", "style", "fill") != "linear-gradient(to right, seagreen 48.75%, transparent 48.75%)" ||
 			tweenText(t, quarter, "counter") != "load 0.25" || tweenText(t, mid, "counter") != "load 0.50" {
 			t.Fatalf("interpolated %q, %q, %q", tweenText(t, quarter, "bar"), tweenText(t, quarter, "bar", "style", "fill"), tweenText(t, quarter, "counter"))
 		}
@@ -102,14 +102,8 @@ steps: {up: {vars: {n: 3; pct: 0.3%}}}
 		t.Fatal(err)
 	}
 	frames := tweenField(m, "steps", "up").Map().TweenFrames
-	mid := len(frames) / 2
-	for i, want := range map[int]string{
-		len(frames) / 3:     "-1, -0.1%",
-		mid - 1:             "0, 0.0%",
-		mid:                 "0, 0.0%",
-		mid + 1:             "0, 0.0%",
-		2 * len(frames) / 3: "1, 0.1%",
-	} {
+	for percent, want := range map[int]string{40: "-1, -0.1%", 44: "0, 0.0%", 50: "0, 0.0%", 52: "0, 0.0%", 60: "1, 0.1%"} {
+		i := len(frames) * percent / 100
 		if got := tweenText(t, frames[i], "x"); got != want {
 			t.Errorf("frame %d label = %q, want %q", i, got, want)
 		}
