@@ -196,3 +196,36 @@ steps: {move: {vars.n: 200; group.width: 200; group.child.top: -50}}
 		}
 	}
 }
+
+func TestScenarioGeometryReturnsToParentBinding(t *testing.T) {
+	root, err := compileTween(t, `
+vars: {d2-config: {animate-interval: 1s; animate-duration: 64ms}; load: 100; capacity: 100}
+classes: {card: {left: ${load}; width: ${capacity}}}
+api: "Load ${load}" {class: card}
+scenarios: {
+  burst: {vars: {load: 200; capacity: 50}; api.width: 100}
+  steady: {}
+}
+`, d2ir.CompileOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	steady := tweenField(root, "scenarios", "steady").Map()
+	if len(steady.TweenFrames) != 4 {
+		t.Fatalf("got %d samples, want 4", len(steady.TweenFrames))
+	}
+	for i, want := range []struct{ left, label string }{
+		{"200", "Load 200"}, {"194", "Load 175"}, {"150", "Load 150"}, {"106", "Load 125"},
+	} {
+		frame := steady.TweenFrames[i]
+		if got := tweenText(t, frame, "api", "left"); got != want.left {
+			t.Errorf("frame %d: left = %s, want %s", i, got, want.left)
+		}
+		if got := tweenText(t, frame, "api"); got != want.label {
+			t.Errorf("frame %d: label = %s, want %s", i, got, want.label)
+		}
+		if got := tweenText(t, frame, "api", "width"); got != "100" {
+			t.Errorf("frame %d: width = %s, want 100 at both endpoints", i, got)
+		}
+	}
+}

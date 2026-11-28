@@ -154,13 +154,21 @@ while existing rows and connections stay anchored. Appending a sequence message 
 extend the activation bar and draw the arrow from sender to recipient.
 [Animated TALA example](./docs/examples/tala-step-motion/dispatch.gif) · [D2 source](./docs/examples/tala-step-motion/dispatch.d2)
 
-Animated SVG can reuse a shape, its label, and its artwork across steps. When
+Animated SVG can reuse a shape, its label, and its artwork across steps and scenarios. When
 their geometry stays compatible, the browser interpolates movement and supported
 paint changes at display refresh. TALA preserves fractional positions between
 authored pins. MP4 and WebM sample motion at 60 fps. For changes that need
 separate pictures, D2 targets 60 samples per second, up to 288 per transition.
 GIF fits tween samples to its centisecond clock, using delays of at least
 20 ms wherever the authored timing allows.
+
+Scenarios let you compare independent failures on the same architecture. In this
+example, the Orders API writes each order and its outbox event in one PostgreSQL
+transaction. During a one-minute Kafka outage, all 120 orders are accepted and
+their events wait in the outbox. During a PostgreSQL primary outage, all 120
+requests receive HTTP 503, while the fulfillment worker processes the 30 events
+already waiting in Kafka.
+[Animated order-processing architecture](./docs/examples/order-outbox-failures.gif) · [D2 source](./docs/examples/order-outbox-failures.d2)
 
 Nodes moving between pinned positions, shapes changing size, and grid cells
 shifting into place use cubic ease-in-out. Adding a grid column moves the
