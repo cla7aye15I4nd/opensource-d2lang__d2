@@ -207,6 +207,9 @@ func wrapFrames(rootDiagram *d2target.Diagram, boardPath []string, frames []Fram
 		native, tracks, needFrameClock = nativeTimelineMotion(frames, svgs, diagramHash, totalMS)
 		if native != nil {
 			transitions.Write(tracks)
+			// Native motion places paint, geometry and frame clocks inside
+			// the shared artwork. Pause those descendants along with the root.
+			fmt.Fprintf(&transitions, "@media(prefers-reduced-motion:reduce){svg[data-d2-animation=%s] *{animation-play-state:paused!important}}", diagramHash)
 			svgs = [][]byte{native}
 		}
 	}

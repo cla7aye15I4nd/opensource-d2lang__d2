@@ -39,6 +39,15 @@ async function seek(page, ms) {
 // Sample between 60 Hz ticks. The same live marker should cover all five
 // diagram units continuously across both directions and hold at each endpoint.
 async function checkFractionalMotion(page) {
+  // Read the browser's own playback state before seek() pauses the clocks.
+  const running = () => page.evaluate(() =>
+    document.getAnimations().filter((animation) => animation.playState === "running").length
+  );
+  assert.ok(await running() > 0, "native motion plays with no media preference");
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.reload();
+  assert.equal(await running(), 0, "reduced motion pauses unattended native playback");
+  await page.emulateMedia({ reducedMotion: "no-preference" });
   const at = async (ms) => {
     await seek(page, ms);
     return page.evaluate(() => {
