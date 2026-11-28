@@ -43,7 +43,7 @@ var keywordDocs = map[string]keywordDoc{
 	"border-radius":        {"style", "Corner rounding. Integer, 0 or greater."},
 	"font":                 {"style", "Font family. `mono` for monospace."},
 	"font-size":            {"style", "Text size. Integer from 8 to 100."},
-	"font-color":           {"style", "Text color."},
+	"font-color":           {"style", "Text color. Use a CSS color name, a quoted hex code, or a gradient."},
 	"bold":                 {"style", "`true` or `false`."},
 	"italic":               {"style", "`true` or `false`."},
 	"underline":            {"style", "`true` or `false`."},
@@ -52,6 +52,6 @@ var keywordDocs = map[string]keywordDoc{
 	"multiple":             {"style", "Draws the shape as a stack. `true` or `false`. Shapes only."},
 	"double-border":        {"style", "`true` or `false`. Rectangles and ovals."},
 	"3d":                   {"style", "`true` or `false`. Rectangles and squares."},
-	"animated":             {"style", "On a connection, `style.animated: true` animates the dashes. Use `icon.style.animated: true` to loop one icon, `2/s` to launch two per second, `0/s` to stop launching, or `200ms` to loop one icon every 200 milliseconds."},
+	"animated":             {"style", "`style.animated: true` makes a shape float or animates the dashes on a connection. Use `icon.style.animated: true` to loop one icon, `2/s` to launch two per second, `0/s` to stop launching, or `200ms` to loop one icon every 200 milliseconds."},
 	"filled":               {"style", "Fills the arrowhead. `true` or `false`. Arrowheads only."},
 }

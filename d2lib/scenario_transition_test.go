@@ -11,7 +11,7 @@ import (
 	"github.com/d2lang/d2/d2target"
 )
 
-const scenarioTiming = "vars: {d2-config: {animate-interval: 250ms; animate-duration: 160ms}}\n"
+const scenarioTiming = "vars: {d2-config: {animate-interval: 250ms; animate-duration: 200ms}}\n"
 
 func TestScenarioGridAndOpacityCompareSiblingEndpoints(t *testing.T) {
 	source := scenarioTiming + `grid-columns: 2
@@ -69,7 +69,7 @@ scenarios: {
 }
 
 func TestScenarioAnchorsSamplesAndEndpointsToParent(t *testing.T) {
-	const source = `vars: {n: 100%; d2-config: {animate-interval: 250ms; animate-duration: 160ms}}
+	const source = `vars: {n: 100%; d2-config: {animate-interval: 250ms; animate-duration: 200ms}}
 a: "Load ${n}"
 scenarios: {
   busy: {vars.n: 180%}
@@ -82,11 +82,11 @@ scenarios: {
 		return true, nil
 	})
 	quiet := root.Scenarios[1]
-	if len(quiet.TweenFrames) != 4 {
+	if len(quiet.TweenFrames) != 12 {
 		t.Fatalf("got %d paint samples", len(quiet.TweenFrames))
 	}
 	for i, want := range []string{"Load 180%", "Load 140%", "Load 100%", "Load 60%"} {
-		if got := shapeByID(t, quiet.TweenFrames[i], "a").Label; got != want {
+		if got := shapeByID(t, quiet.TweenFrames[i*len(quiet.TweenFrames)/4], "a").Label; got != want {
 			t.Errorf("sample %d label %q, want %q", i, got, want)
 		}
 	}
@@ -170,8 +170,8 @@ a -> b
 scenarios: {third: {a.style.fill: blue; b -> c}}`
 	optimized, calls := compileForLayoutReuseTest(t, source, true)
 	baseline, _ := compileForLayoutReuseTest(t, source, false)
-	if calls != 2 || len(optimized.Scenarios[0].TweenFrames) != 4 {
-		t.Fatalf("got %d layouts, %d samples; want 2 layouts across 4 samples", calls, len(optimized.Scenarios[0].TweenFrames))
+	if calls != 2 || len(optimized.Scenarios[0].TweenFrames) != 12 {
+		t.Fatalf("got %d layouts, %d samples; want 2 layouts across 12 samples", calls, len(optimized.Scenarios[0].TweenFrames))
 	}
 	assertExactDiagramAndSVG(t, optimized, baseline)
 }
@@ -275,13 +275,13 @@ scenarios: {
 		prev = scenario
 	}
 	for i, scenario := range root.Scenarios[2:] {
-		// 160ms supplies four samples. Cubic easing traverses 1/16 of a
+		// Cubic easing traverses 1/16 of a
 		// visibility change at one quarter of its duration.
-		if len(scenario.TweenFrames) != 4 {
+		if len(scenario.TweenFrames) != 12 {
 			t.Fatalf("%s has %d opacity samples", scenario.Name, len(scenario.TweenFrames))
 		}
 		want := []float64{15.0 / 16, 1.0 / 16}[i]
-		if got := shapeByID(t, scenario.TweenFrames[1], "build").Opacity; got != want {
+		if got := shapeByID(t, scenario.TweenFrames[len(scenario.TweenFrames)/4], "build").Opacity; got != want {
 			t.Errorf("%s quarter-time opacity %g, want %g", scenario.Name, got, want)
 		}
 	}
