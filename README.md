@@ -162,6 +162,15 @@ requests receive HTTP 503, while the fulfillment worker processes the 30 events
 already waiting in Kafka.
 [Animated order-processing architecture](./docs/examples/order-outbox-failures.gif) · [D2 source](./docs/examples/order-outbox-failures.d2)
 
+Nodes moving between pinned positions, shapes changing size, and grid cells
+shifting into place use cubic ease-in-out. Adding a grid column moves the
+neighboring cells aside while the new cells grow and fade into view. Removing
+a column reverses the gesture. Individual nodes can also grow in or shrink
+away when the surrounding diagram stays in place. Fading a node or connection
+to or from zero opacity also eases. Numeric labels and continuous flows along
+connections keep their own timing.
+[Compare linear and eased CI matrix transitions](./docs/examples/ci-matrix-easing.gif) · [D2 source](https://github.com/d2lang/d2-docs/blob/9e24c10ab32e079fcbb35ecb8ddf79d2bb1476d2/static/bespoke-d2/animate-grid-ci.d2)
+
 A positive `animate-interval` cycles through all exported boards, including
 linked layers. Link a shape with `gateway.link: layers.gateway` and set
 `animate-duration` to zoom through that shape when playback enters the layer

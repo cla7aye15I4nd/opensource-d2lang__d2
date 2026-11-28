@@ -35,7 +35,7 @@ type boardTransitionPlan struct {
 // Plan motion for related boards, then distribute the available samples across
 // the document. Steps are cumulative. A scenario compares two alternatives
 // only when its parent or a sibling is actually on screen.
-func sampleBoardTransitions(ctx context.Context, root *d2target.Diagram, graph *d2graph.Graph, duration, boardLimit int, sketch, structural bool) error {
+func sampleBoardTransitions(ctx context.Context, root *d2target.Diagram, graph *d2graph.Graph, duration, boardLimit int, sketch, tala bool) error {
 	plans := make(map[*d2target.Diagram]boardTransitionPlan)
 	var last *d2target.Diagram
 	var visit func(*d2target.Diagram, *d2graph.Graph) error
@@ -46,7 +46,7 @@ func sampleBoardTransitions(ctx context.Context, root *d2target.Diagram, graph *
 		// An empty grid can gain a visible slot when a step fills it.
 		prev, prevGraph := board, g
 		for i, step := range board.Steps {
-			planRelatedBoard(plans, prev, step, prevGraph, g.Steps[i], sketch, structural)
+			planRelatedBoard(plans, prev, step, prevGraph, g.Steps[i], sketch, tala)
 			prev, prevGraph = step, g.Steps[i]
 		}
 		if last != nil && plans[board].emptyAfter == last {
@@ -75,7 +75,7 @@ func sampleBoardTransitions(ctx context.Context, root *d2target.Diagram, graph *
 					child.TweenFrames, child.TweenDurationMS = nil, 0
 				}
 				if !scenario.IsFolderOnly || len(scenario.Shapes)+len(scenario.Layers)+len(scenario.Scenarios)+len(scenario.Steps) == 0 {
-					planRelatedBoard(plans, prev, scenario, prevGraph, child, sketch, structural)
+					planRelatedBoard(plans, prev, scenario, prevGraph, child, sketch, tala)
 					iconSources[i] = prevGraph
 				}
 			} else {
@@ -110,15 +110,15 @@ func sampleBoardTransitions(ctx context.Context, root *d2target.Diagram, graph *
 	return samplePlannedTransitions(ctx, root, duration, boardLimit, sketch, false, plans)
 }
 
-func planRelatedBoard(plans map[*d2target.Diagram]boardTransitionPlan, prev, next *d2target.Diagram, prevGraph, nextGraph *d2graph.Graph, sketch, structural bool) {
+func planRelatedBoard(plans map[*d2target.Diagram]boardTransitionPlan, prev, next *d2target.Diagram, prevGraph, nextGraph *d2graph.Graph, sketch, tala bool) {
 	var p boardTransitionPlan
 	previousEmpty := plans[prev].emptyAfter != nil
 	emptyLeaf := next.IsFolderOnly && len(next.Shapes) == 0 && len(next.Layers)+len(next.Scenarios)+len(next.Steps) == 0
 	if motion, cost := planGridTransition(prev, next, prevGraph, nextGraph); motion != nil {
 		prev.IsFolderOnly, next.IsFolderOnly = false, false
 		p.motion, p.cost = motion, cost
-	} else if structural && (!prev.IsFolderOnly || previousEmpty) && (!next.IsFolderOnly || emptyLeaf) {
-		p = planStructuralTransition(prev, next, prevGraph, nextGraph, sketch)
+	} else if (!prev.IsFolderOnly || previousEmpty) && (!next.IsFolderOnly || emptyLeaf) {
+		p = planStructuralTransition(prev, next, prevGraph, nextGraph, sketch, tala)
 		if emptyLeaf && (p.reveal != nil && p.reveal.departing || previousEmpty && sameBoardCanvas(prev, next)) {
 			p.emptyAfter = prev
 		}
@@ -132,33 +132,34 @@ func planRelatedBoard(plans map[*d2target.Diagram]boardTransitionPlan, prev, nex
 	}
 }
 
-func planStructuralTransition(prev, next *d2target.Diagram, prevGraph, nextGraph *d2graph.Graph, sketch bool) boardTransitionPlan {
+func planStructuralTransition(prev, next *d2target.Diagram, prevGraph, nextGraph *d2graph.Graph, sketch, tala bool) boardTransitionPlan {
 	var p boardTransitionPlan
 	// Tables and sequence diagrams can prove their own anchors from the
 	// rendered endpoints even when TALA did not continue the graph layout.
-	if !sketch {
+	if tala && !sketch {
 		p.sequence = planSequenceTrace(prev, next, prevGraph, nextGraph)
 	}
-	if p.sequence == nil && len(next.TweenFrames) == 0 {
+	if tala && p.sequence == nil && len(next.TweenFrames) == 0 {
 		p.sqlRows = planSQLRowReveal(prev, next)
 	}
-	deletion := len(prev.Shapes) > len(next.Shapes) || len(prev.Connections) > len(next.Connections)
-	if len(prev.Shapes) == 0 && len(next.Shapes) > 0 && len(next.TweenFrames) == 0 &&
-		!nextGraph.Root.IsGridDiagram() && !nextGraph.Root.IsSequenceDiagram() && sameBoardCanvas(prev, next) {
-		// With no surviving geometry to displace, ordinary leaves can enter
-		// in their authored positions on the previously cleared canvas.
-		p.reveal = planBoardReveal(prev, next, nextGraph).ordinaryLeaves(prev, next, nextGraph)
-	} else if deletion && len(next.TweenFrames) == 0 && p.sqlRows == nil && p.sequence == nil {
-		p.reveal = planBoardDeparture(prev, next, prevGraph)
-	} else if next.LayoutContinuity && len(next.TweenFrames) == 0 && p.sqlRows == nil && p.sequence == nil {
-		p.transfer = newBoardTransfer(prev, next, prevGraph, nextGraph)
-		if p.transfer == nil {
-			p.reveal = planBoardReveal(prev, next, nextGraph)
-			if !sketch {
-				p.outline = planBoardOutline(prev, next, prevGraph, nextGraph)
+	if len(next.TweenFrames) == 0 && p.sqlRows == nil && p.sequence == nil {
+		switch {
+		case len(prev.Shapes) > len(next.Shapes) || len(prev.Connections) > len(next.Connections):
+			p.reveal = planStableLeafChange(next, prev, prevGraph, true)
+		case tala && next.LayoutContinuity && len(prev.Shapes) > 0:
+			p.transfer = newBoardTransfer(prev, next, prevGraph, nextGraph)
+			if p.transfer == nil {
+				p.reveal = planBoardReveal(prev, next, nextGraph)
+				if !sketch {
+					p.outline = planBoardOutline(prev, next, prevGraph, nextGraph)
+				}
+				if p.outline != nil && p.outline.needsReveal && p.reveal == nil {
+					p.outline = nil
+				}
 			}
-			if p.outline != nil && p.outline.needsReveal && p.reveal == nil {
-				p.outline = nil
+		default:
+			if !nextGraph.Root.IsGridDiagram() && !nextGraph.Root.IsSequenceDiagram() {
+				p.reveal = planStableLeafChange(prev, next, nextGraph, false)
 			}
 		}
 	}

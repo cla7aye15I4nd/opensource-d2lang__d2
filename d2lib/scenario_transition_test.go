@@ -258,3 +258,31 @@ scenarios: {
 		}
 	}
 }
+
+func TestScenarioDagreStableLeafAndVisibilityEasing(t *testing.T) {
+	root, _ := compileGridMotionTest(t, scenarioTiming+`build: Build {width: 160; height: 80}
+scenarios: {
+  audit: {review: Review {width: 160; height: 80}}
+  normal: {}
+  hidden: {build.style.opacity: 0}
+  visible: {}
+}`)
+	prev := root
+	for _, scenario := range root.Scenarios[:2] {
+		if len(scenario.TweenFrames) < 2 || !reflect.DeepEqual(scenario.TweenFrames[0].Shapes, prev.Shapes) {
+			t.Fatalf("Dagre scenario %s did not animate from the preceding board", scenario.Name)
+		}
+		prev = scenario
+	}
+	for i, scenario := range root.Scenarios[2:] {
+		// 160ms supplies four samples. Cubic easing traverses 1/16 of a
+		// visibility change at one quarter of its duration.
+		if len(scenario.TweenFrames) != 4 {
+			t.Fatalf("%s has %d opacity samples", scenario.Name, len(scenario.TweenFrames))
+		}
+		want := []float64{15.0 / 16, 1.0 / 16}[i]
+		if got := shapeByID(t, scenario.TweenFrames[1], "build").Opacity; got != want {
+			t.Errorf("%s quarter-time opacity %g, want %g", scenario.Name, got, want)
+		}
+	}
+}
