@@ -102,7 +102,14 @@ steps: {up: {vars: {n: 3; pct: 0.3%}}}
 		t.Fatal(err)
 	}
 	frames := tweenField(m, "steps", "up").Map().TweenFrames
-	for i, want := range map[int]string{10: "-1, -0.1%", 11: "0, 0.0%", 12: "0, 0.0%", 13: "0, 0.0%", 15: "1, 0.1%"} {
+	mid := len(frames) / 2
+	for i, want := range map[int]string{
+		len(frames) / 3:     "-1, -0.1%",
+		mid - 1:             "0, 0.0%",
+		mid:                 "0, 0.0%",
+		mid + 1:             "0, 0.0%",
+		2 * len(frames) / 3: "1, 0.1%",
+	} {
 		if got := tweenText(t, frames[i], "x"); got != want {
 			t.Errorf("frame %d label = %q, want %q", i, got, want)
 		}
