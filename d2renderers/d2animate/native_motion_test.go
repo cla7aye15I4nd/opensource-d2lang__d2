@@ -244,3 +244,28 @@ func TestNativeCubicSelectedPerObjectAndMove(t *testing.T) {
 		}
 	}
 }
+
+func TestNativeMotionKeepsPaintThatReturnsToItsStartingColor(t *testing.T) {
+	const still = `<g class="YQ=="><rect x="0" y="0" fill="#000000"/></g>`
+	const white = `<rect x="0" y="0" fill="#ffffff"/>`
+	for _, tc := range []struct{ name, middle string }{
+		{"return to start", `<g class="YQ==">` + white + `</g>`},
+		{"nested copy of still artwork", `<g>` + still + `</g><g class="YQ==">` + white + `</g>`},
+		{"encoded class and nested copy", `<g>` + still + `</g><g class="&#89;Q==">` + white + `</g>`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			board := d2target.NewDiagram()
+			board.Shapes = []d2target.Shape{{ID: "a"}}
+			var frames []Frame
+			var parts [][]byte
+			for i, artwork := range []string{still, still, tc.middle, still, still} {
+				frames = append(frames, Frame{Diagram: board, TweenSample: i < 4, DurationMS: 10})
+				parts = append(parts, []byte(`<g class="d2-test">`+artwork+`</g>`))
+			}
+			art, css, _ := nativeMotion(frames, parts, "d2-test", 50)
+			if art == nil || !bytes.Contains(css, []byte("fill:#ffffff")) {
+				t.Fatal("missing the intermediate paint between equal endpoint drawings")
+			}
+		})
+	}
+}

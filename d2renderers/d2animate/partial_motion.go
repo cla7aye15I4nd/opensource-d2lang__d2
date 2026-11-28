@@ -52,16 +52,20 @@ func nativeTimelineMotion(frames []Frame, svgs [][]byte, hash string, total int)
 	// Whole-film tracks remain preferable when the same drawing survives every
 	// step. A mixed result can also keep a stable object across unrelated edits.
 	global := motionSpan{animated: make(map[string]bool)}
-	art, css, needsClock = nativeMotionSpan(frames, svgs, hash, total, global)
+	parsed := make([]parsedMotionFrame, len(frames))
+	art, css, needsClock = nativeMotionSpan(frames, svgs, hash, total, global, parsed)
 	if art != nil && !needsClock {
 		return
 	}
 	localClock, gained := false, false
 	for i := range steps {
 		s := &steps[i]
-		span := motionSpan{first: s.first, startMS: s.startMS, suffix: "-step" + strconv.Itoa(s.first), accepted: make(map[string]bool), animated: make(map[string]bool)}
+		span := motionSpan{first: s.first, startMS: s.startMS, suffix: "-step" + strconv.Itoa(s.first), animated: make(map[string]bool)}
+		if art != nil {
+			span.accepted = make(map[string]bool)
+		}
 		var clock bool
-		s.art, s.css, clock = nativeMotionSpan(frames[s.first:s.end], svgs[s.first:s.end], hash, total, span)
+		s.art, s.css, clock = nativeMotionSpan(frames[s.first:s.end], svgs[s.first:s.end], hash, total, span, parsed[s.first:s.end])
 		// Changing which object anchors the paint order must not take smooth
 		// motion away from a shape that already had a whole-film track.
 		if art != nil {
@@ -94,13 +98,8 @@ func nativeTimelineMotion(frames []Frame, svgs [][]byte, hash string, total int)
 		for ; at < end; at++ {
 			// External styles, links and independently animated or nested artwork
 			// can depend on the original full-document DOM. Keep that rendering.
-			if _, ok := motionChildren(svgs[at], hash); !ok {
+			if !parsed[at].load(frames[at], svgs[at], hash) {
 				return false
-			}
-			for _, shape := range frames[at].Picture().Shapes {
-				if len(shape.Classes) != 0 {
-					return false
-				}
 			}
 			name := "d2Transition"
 			if frames[at].TweenSample {

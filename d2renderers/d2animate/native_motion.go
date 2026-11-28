@@ -93,6 +93,51 @@ func motionChildren(frame []byte, hash string) ([]motionChild, bool) {
 	}
 }
 
+// A frame may participate in both the whole film and its own step. Decode its
+// SVG and index the corresponding shapes once, including failed lookups.
+type parsedMotionFrame struct {
+	children  []motionChild
+	positions map[string]int
+	shapes    map[string]*d2target.Shape
+	parsed    bool
+}
+
+func (p *parsedMotionFrame) load(frame Frame, artwork []byte, hash string) bool {
+	if p.parsed {
+		return p.shapes != nil
+	}
+	p.parsed = true
+	children, ok := motionChildren(artwork, hash)
+	if !ok {
+		return false
+	}
+	picture := frame.Picture()
+	shapes := make(map[string]*d2target.Shape, len(picture.Shapes))
+	for i := range picture.Shapes {
+		s := &picture.Shapes[i]
+		if len(s.Classes) != 0 {
+			return false
+		}
+		if s.Link != "" || s.Tooltip != "" || s.Animated || s.Icon != nil {
+			continue
+		}
+		shapes[base64.URLEncoding.EncodeToString([]byte(svg.EscapeText(s.ID)))] = s
+	}
+	p.shapes, p.children = shapes, children
+	p.positions = make(map[string]int, len(shapes))
+	for i, c := range children {
+		if c.id == "" {
+			continue
+		}
+		if _, exists := p.positions[c.id]; exists {
+			p.positions[c.id] = -1
+		} else {
+			p.positions[c.id] = i
+		}
+	}
+	return true
+}
+
 type motionPaint struct{ selector, property, value string }
 type motionPose struct {
 	x, y       float64
@@ -474,11 +519,18 @@ func writeNativeShape(css *bytes.Buffer, prefix string, clock []motionTick, pose
 // Stable anchors partition the original paint order. Content between them can
 // enter, disappear, change topology or reorder without invalidating their motion.
 func nativeMotion(frames []Frame, svgs [][]byte, hash string, total int) (art, styles []byte, needsFrameClock bool) {
-	return nativeMotionSpan(frames, svgs, hash, total, motionSpan{})
+	return nativeMotionSpan(frames, svgs, hash, total, motionSpan{}, nil)
 }
 
-func nativeMotionSpan(frames []Frame, svgs [][]byte, hash string, total int, span motionSpan) (art, styles []byte, needsFrameClock bool) {
+func nativeMotionSpan(frames []Frame, svgs [][]byte, hash string, total int, span motionSpan, parsed []parsedMotionFrame) (art, styles []byte, needsFrameClock bool) {
 	if len(frames) < 2 || len(frames) != len(svgs) || !d2svg.UsesDefaultStylesheet() || !slices.ContainsFunc(frames, func(f Frame) bool { return f.TweenSample }) {
+		return
+	}
+	if parsed == nil {
+		parsed = make([]parsedMotionFrame, len(frames))
+	}
+	// A local span may also need to report the IDs of stationary shapes.
+	if span.accepted == nil && len(frames) > 4 && !mayHaveMotion(frames, svgs, hash, parsed) {
 		return
 	}
 	rows := make([][]motionChild, len(frames))
@@ -487,35 +539,11 @@ func nativeMotionSpan(frames []Frame, svgs [][]byte, hash string, total int, spa
 	clock := make([]motionTick, len(frames)+1)
 	ms := span.startMS
 	for i, frame := range frames {
-		raw := svgs[i]
-
-		var ok bool
-		rows[i], ok = motionChildren(raw, hash)
-		if !ok {
+		p := &parsed[i]
+		if !p.load(frame, svgs[i], hash) {
 			return nil, nil, false
 		}
-		positions[i] = map[string]int{}
-		for j, c := range rows[i] {
-			if c.id == "" {
-				continue
-			}
-			if _, ok := positions[i][c.id]; ok {
-				positions[i][c.id] = -1
-			} else {
-				positions[i][c.id] = j
-			}
-		}
-		shapes[i] = map[string]*d2target.Shape{}
-		for j := range frame.Picture().Shapes {
-			s := &frame.Picture().Shapes[j]
-			if len(s.Classes) != 0 {
-				return nil, nil, false
-			}
-			if s.Link != "" || s.Tooltip != "" || s.Animated || s.Icon != nil {
-				continue
-			}
-			shapes[i][base64.URLEncoding.EncodeToString([]byte(svg.EscapeText(s.ID)))] = s
-		}
+		rows[i], positions[i], shapes[i] = p.children, p.positions, p.shapes
 		clock[i] = motionTick{at: float64(ms) + float64(frame.start.fraction)/float64(time.Millisecond), pct: frame.start.percentage(ms, total), tween: frame.TweenSample}
 		if !frame.TweenSample {
 			clock[i].incomingMS = frame.Diagram.TweenDurationMS
