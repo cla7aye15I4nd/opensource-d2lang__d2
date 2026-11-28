@@ -7,13 +7,13 @@ import (
 	"image"
 	"image/color"
 	"image/gif"
-	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/d2lang/d2/d2renderers/d2svg"
 	"github.com/d2lang/d2/d2target"
+	d2color "github.com/d2lang/d2/lib/color"
 	"github.com/d2lang/util-go/go2"
 )
 
@@ -22,7 +22,8 @@ var testProgressInk = color.RGBA{R: 0x12, G: 0x9a, B: 0x4f, A: 255}
 func progressRenderOpts() d2svg.RenderOpts {
 	return d2svg.RenderOpts{
 		Pad: new(int64), AnimateProgress: go2.Pointer(true),
-		ThemeOverrides: &d2target.ThemeOverrides{B1: go2.Pointer("#129a4f")},
+		AnimateProgressColor: "#129a4f",
+		ThemeOverrides:       &d2target.ThemeOverrides{B1: go2.Pointer("#129a4f")},
 	}
 }
 
@@ -67,14 +68,47 @@ func TestVideoProgressUsesOutputClockAndLetterbox(t *testing.T) {
 	}
 }
 
+func TestVideoDefaultProgressFollowsCameraMatte(t *testing.T) {
+	root, layer := simpleRasterDiagramWithSize(64, 64), simpleRasterDiagramWithSize(80, 80)
+	root.Root.Fill, layer.Root.Fill = "transparent", "#101820"
+	root.Shapes[0].Link = "root.layers.detail"
+	layer.Name = "detail"
+	root.Layers = []*d2target.Diagram{layer}
+	opts := progressRenderOpts()
+	opts.AnimateProgressColor = ""
+	tick := 0
+	var seenWhite, seenDark, seenFallback bool
+	err := renderVideoFrames(t.Context(), "-", false, root, opts, 600, gifLayerOptions{duration: 400}, 0, false, videoSize{}, func(frame image.Image, repeats int) error {
+		h := frame.Bounds().Dy()
+		bg := color.RGBAModel.Convert(frame.At(0, h-7)).(color.RGBA)
+		ink := color.RGBAModel.Convert(frame.At(0, h-1))
+		want := d2color.InverseContrast(bg)
+		if tick == 0 {
+			if ink != bg {
+				t.Fatalf("first tick already painted %v over %v", ink, bg)
+			}
+		} else if ink != want {
+			t.Fatalf("at tick %d, ink %v over %v, want %v", tick, ink, bg, want)
+		}
+		seenWhite = seenWhite || bg == (color.RGBA{255, 255, 255, 255})
+		seenDark = seenDark || bg == (color.RGBA{0x10, 0x18, 0x20, 255})
+		seenFallback = seenFallback || want != (color.RGBA{255 - bg.R, 255 - bg.G, 255 - bg.B, 255})
+		tick += repeats
+		return nil
+	})
+	if err != nil || !seenWhite || !seenDark || !seenFallback {
+		t.Fatalf("white=%t dark=%t intermediate contrast fallback=%t, error %v", seenWhite, seenDark, seenFallback, err)
+	}
+}
+
 func TestVideoProgressCancellationRestoresBorrowedCanvas(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	frame := image.NewRGBA(image.Rect(3, 7, 51, 11))
 	original := bytes.Clone(frame.Pix)
-	p := &videoProgressOverlay{ink: image.NewUniform(testProgressInk), steps: frame.Rect.Dx(), height: 2}
+	p := &videoProgressOverlay{ink: func(color.RGBA) color.RGBA { return testProgressInk }, steps: frame.Rect.Dx(), height: 2}
 	calls := 0
-	err := p.emit(ctx, frame, 5, 50, 60, func(im image.Image, _ int) error {
+	err := p.emit(ctx, frame, color.RGBA{A: 255}, 5, 50, 60, func(im image.Image, _ int) error {
 		checkProgressStrip(t, im, 4, 2)
 		calls++
 		cancel()
@@ -276,21 +310,28 @@ func TestGIFProgressFooterPreservesBoardPlacementAndMatte(t *testing.T) {
 		original, padded := render(false), render(true)
 		// The short side of the original canvas rounds to two pixels. The
 		// footer itself would put the canvas over the three-pixel threshold.
-		if padded.Config.Width != original.Config.Width || padded.Config.Height != original.Config.Height+8+2 ||
-			!slices.Equal(original.Delay, padded.Delay) {
+		if padded.Config.Width != original.Config.Width || padded.Config.Height != original.Config.Height+8+2 {
 			t.Fatalf("multi=%t: changed playback or canvas: %v/%v vs %v/%v", multi, original.Config, original.Delay, padded.Config, padded.Delay)
 		}
-		for _, i := range []int{0, len(padded.Image) - 1} {
+		// Compare the pictures at their playback times: the progress strip
+		// splits a static board's single delay into several visible updates.
+		at := 0
+		for i, frame := range padded.Image {
+			board := at / 10 // Each authored board holds for 100ms.
+			end := at + padded.Delay[i]
+			if board >= len(original.Image) || original.Delay[board] != 10 || end > (board+1)*10 {
+				t.Fatalf("multi=%t: frame %d crossed the board boundary: %d..%dcs", multi, i, at, end)
+			}
+			at = end
 			red := color.RGBA{255, 0, 0, 255}
 			bg := color.RGBA{0x10, 0x20, 0x30, 255}
-			if multi && i != 0 {
+			if multi && board != 0 {
 				bg = color.RGBA{0x23, 0x1f, 0x40, 255}
 			}
-			frame := padded.Image[i]
 			for y := 0; y < original.Config.Height+8; y++ {
 				for x := 0; x < frame.Rect.Dx(); x++ {
 					want := bg
-					if y < original.Config.Height && color.RGBAModel.Convert(original.Image[i].At(x, y)) == red {
+					if y < original.Config.Height && color.RGBAModel.Convert(original.Image[board].At(x, y)) == red {
 						want = red
 					}
 					if got := color.RGBAModel.Convert(frame.At(x, y)); got != want {
@@ -298,6 +339,9 @@ func TestGIFProgressFooterPreservesBoardPlacementAndMatte(t *testing.T) {
 					}
 				}
 			}
+		}
+		if at != 10*len(original.Image) {
+			t.Fatalf("multi=%t: timed footer plays for %dcs", multi, at)
 		}
 	}
 }
@@ -317,8 +361,14 @@ layers: {inner: {style.fill: "#304050"; b}}`
 	}
 	from, to := color.RGBA{0x10, 0x20, 0x30, 255}, color.RGBA{0x30, 0x40, 0x50, 255}
 	var atStart, atEnd, blended bool
-	for _, im := range clip.Image {
+	for i, im := range clip.Image {
 		got := color.RGBAModel.Convert(im.At(0, im.Rect.Max.Y-7)).(color.RGBA)
+		if i > 0 {
+			want := color.RGBA{255 - got.R, 255 - got.G, 255 - got.B, 255}
+			if ink := color.RGBAModel.Convert(im.At(0, im.Rect.Max.Y-1)); ink != want {
+				t.Fatalf("GIF frame %d has progress %v over %v, want %v", i, ink, got, want)
+			}
+		}
 		if got.G != got.R+16 || got.B != got.R+32 || got.R < from.R || got.R > to.R {
 			t.Fatalf("unexpected footer matte %v", got)
 		}
@@ -347,7 +397,6 @@ func TestGIFProgressPreservesCaptionReadingTime(t *testing.T) {
 	board := simpleRasterDiagram()
 	board.Root.Annotation = &d2target.Annotation{Label: "Pause for this caption."}
 	opts := progressRenderOpts()
-	var delays []int
 	for _, enabled := range []bool{false, true} {
 		opts.AnimateProgress = &enabled
 		data, _, err := renderGIF(t.Context(), "-", false, board, opts, 101, false, gifLayerOptions{})
@@ -365,10 +414,9 @@ func TestGIFProgressPreservesCaptionReadingTime(t *testing.T) {
 		if want := (board.ReadingMS() + 9) / 10; total != want {
 			t.Fatalf("progress %t: caption plays for %dcs, want %dcs", enabled, total, want)
 		}
-		if delays != nil && !slices.Equal(delays, animation.Delay) {
-			t.Fatalf("toggling the progress line changed caption frame delays")
+		if enabled == (len(animation.Delay) == 1) {
+			t.Fatalf("progress %t: caption used %d pictures", enabled, len(animation.Delay))
 		}
-		delays = animation.Delay
 	}
 }
 
@@ -420,7 +468,7 @@ func TestGIFProgressReservesAccentOnFullGrayscalePalette(t *testing.T) {
 	for i := range im.Pix {
 		im.Pix[i] = uint8(i)
 	}
-	p := gifProgressOverlay{ink: image.NewUniform(testProgressInk)}
+	p := gifProgressOverlay{ink: func(color.RGBA) color.RGBA { return testProgressInk }}
 	white := color.RGBA{255, 255, 255, 255}
 	p.start(gifRenderSummary{maxWidth: 256, maxHeight: 7, footerHeight: 10, delays: []int{3}, mattes: []rasterMattes{{board: white, footer: white}}}, nil)
 	im = p.extendSingleBoard(im)
