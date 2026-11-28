@@ -6,6 +6,7 @@ import (
 	"math"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/d2lang/d2/d2renderers/d2svg"
 	"github.com/d2lang/d2/d2target"
@@ -66,7 +67,7 @@ func TestSVGProgressClock(t *testing.T) {
 		"@keyframes d2Progress-" + hash + "{from{transform:scaleX(0)}to{transform:scaleX(1)}}",
 		line + "{fill:var(--d2-progress-light)}", "@media screen and (prefers-color-scheme:dark){" + line + "{fill:var(--d2-progress-dark)}}",
 		`style="--d2-progress-light:#edcba9;--d2-progress-dark:#543210;`,
-		"@media(prefers-reduced-motion:reduce){" + line + "{visibility:hidden}}",
+		"@media(prefers-reduced-motion:reduce){" + line + "{visibility:hidden;animation:none!important}}",
 		`x="0" y="32" width="60" height="2" transform="scale(0 1)" pointer-events="none" aria-hidden="true"`,
 		"1000ms linear infinite",
 	} {
@@ -250,12 +251,14 @@ func TestProgressInkStepBoundaries(t *testing.T) {
 		frames = append(frames, Frame{Diagram: d, DurationMS: (i + 1) * 100})
 		svgs = append(svgs, []byte(`<g viewBox="0 0 100 50"></g>`))
 	}
+	// At 60 fps a uniform sample can land between integer milliseconds.
+	frames[2].start = frameStart{fraction: 500 * time.Microsecond, uniform: true}
 	opts := d2svg.RenderOpts{Pad: new(int64)}
 	out, err := WrapTimeline(root, nil, frames, svgs, opts, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(out), "0%{fill:#0f000f}30%{fill:#000000}60%{fill:#001b4a}") || strings.Contains(string(out), "<filter") {
+	if !strings.Contains(string(out), "0%{fill:#0f000f}30.05%{fill:#000000}60%{fill:#001b4a}") || strings.Contains(string(out), "<filter") {
 		t.Fatal("expected discrete, coalesced fills on the actual playback boundaries")
 	}
 	opts.AnimateProgressColor = "rebeccapurple"

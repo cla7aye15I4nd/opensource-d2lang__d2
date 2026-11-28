@@ -99,7 +99,7 @@ func stepInk(css *bytes.Buffer, totalMS int, frames []Frame, light d2themes.Them
 			lastFill = fill
 			ink := progressInk(theme, footerFill(fill), canvas)
 			if ink != previous {
-				fmt.Fprintf(&stops, "%s{fill:%s}", percentage(100*float64(at)/float64(totalMS), 9), ink)
+				fmt.Fprintf(&stops, "%s{fill:%s}", f.start.percentage(at, totalMS), ink)
 				previous = ink
 			}
 		}
@@ -157,7 +157,7 @@ func svgProgress(buf *bytes.Buffer, hash string, footer image.Rectangle, totalMS
 		}
 		fmt.Fprintf(buf, ".d2-layer-link-%s:target~%s%s{animation-play-state:paused!important}", hash, sibling, line)
 	}
-	fmt.Fprintf(buf, "@media(prefers-reduced-motion:reduce){%s{visibility:hidden}}", line)
+	fmt.Fprintf(buf, "@media(prefers-reduced-motion:reduce){%s{visibility:hidden;animation:none!important}}", line)
 	var class, clock string
 	if track != "" {
 		clock = fmt.Sprintf(",%s %dms steps(1,end) infinite", track, totalMS)
