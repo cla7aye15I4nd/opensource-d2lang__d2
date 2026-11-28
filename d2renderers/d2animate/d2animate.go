@@ -7,6 +7,7 @@ import (
 	"math"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/d2lang/d2/d2renderers/d2svg"
 	"github.com/d2lang/d2/d2renderers/internal/svgframe"
@@ -183,8 +184,11 @@ func wrapFrames(rootDiagram *d2target.Diagram, boardPath []string, frames []Fram
 		frameSibling = "*>"
 	}
 	// The nested SVG clips all camera and board paint to the original artwork viewport.
-	fmt.Fprintf(buf, `<svg class="d2-svg" width="%d" height="%d" viewBox="%d %d %d %d"%s>`, innerW, innerH, left, top, width, height, artAlign)
+	fmt.Fprintf(buf, `<svg class="d2-svg" width="%d" height="%d" viewBox="%d %d %d %d"%s data-d2-animation="%s">`, innerW, innerH, left, top, width, height, artAlign, diagramHash)
 	var transitions bytes.Buffer
+	// Freeze both the artwork and the matching footer paint while keeping
+	// fragment navigation available for readers who choose another board.
+	fmt.Fprintf(&transitions, "@media(prefers-reduced-motion:reduce){svg[data-d2-animation=%[1]s]>g,.d2-footer-%[1]s>*{animation-play-state:paused!important}}", diagramHash)
 	var progress, matte string
 	var linkedMatte bool
 	if showProgress {
@@ -196,9 +200,25 @@ func wrapFrames(rootDiagram *d2target.Diagram, boardPath []string, frames []Fram
 		matte, linkedMatte = footerMatte(&transitions, diagramHash, footer, totalMS, renderOpts, rootDiagram, frames, len(links) > 0, slots)
 	}
 
-	defs, svgs := shareStaticShapes(rootDiagram, svgs, diagramHash)
+	var native []byte
+	needFrameClock := true
+	if len(offsets) == 0 {
+		var tracks []byte
+		native, tracks, needFrameClock = nativeTimelineMotion(frames, svgs, diagramHash, totalMS)
+		if native != nil {
+			transitions.Write(tracks)
+			svgs = [][]byte{native}
+		}
+	}
+	needFrameClock = native == nil || needFrameClock || strings.Contains(matte, "d2Transition-")
+	var defs, graphics []byte
+	if native == nil {
+		defs, svgs = shareStaticShapes(rootDiagram, svgs, diagramHash)
+	}
 	styleFrames := svgs
-	graphics, svgs := shareFrameGraphics(svgs, diagramHash)
+	if native == nil {
+		graphics, svgs = shareFrameGraphics(svgs, diagramHash)
+	}
 	var styleGraphics []byte
 	if len(defs) != 0 {
 		// The static shapes already introduce references, so font selection uses
@@ -222,7 +242,7 @@ func wrapFrames(rootDiagram *d2target.Diagram, boardPath []string, frames []Fram
 	svgsStr := source.String()
 
 	hidden, visible := "{opacity:0", "{opacity:1"
-	if len(slots) == 0 && (!uniform || len(svgs) > 100) {
+	if len(slots) == 0 && (!uniform || len(durationsMS) > 100) {
 		hidden, visible = "{clip-path:inset(50%)", "{clip-path:none"
 	}
 	if strings.Contains(svgsStr, "<a ") || strings.Contains(svgsStr, "<title>") {
@@ -243,13 +263,24 @@ func wrapFrames(rootDiagram *d2target.Diagram, boardPath []string, frames []Fram
 	// Global playback runs until a fragment is selected. Each clickable
 	// layer also has a local clock for exploring its own authored steps.
 	startMS := 0
+	var from frameStart
 	for i, duration := range durationsMS {
-		writeFrameKeyframes(&transitions, "d2Transition", diagramHash, i, startMS, duration, totalMS, hidden, visible)
+		var to frameStart
+		if i+1 < len(frames) {
+			to = frames[i+1].start
+		}
+		if needFrameClock {
+			writeFrameKeyframes(&transitions, "d2Transition", diagramHash, i, startMS, duration, totalMS, from, to, hidden, visible)
+		}
 		startMS += duration
 		if len(slots) > 0 && slots[i].count > 1 {
 			slot := slots[i]
-			writeFrameKeyframes(&transitions, "d2LayerStep", diagramHash, i, slot.startMS, frames[i].DurationMS, slot.totalMS, hidden, visible)
+			writeFrameKeyframes(&transitions, "d2LayerStep", diagramHash, i, slot.startMS, frames[i].DurationMS, slot.totalMS, from, to, hidden, visible)
 		}
+		from = to
+	}
+	if native != nil && needFrameClock {
+		writeReducedMotionFrames(&transitions, diagramHash, frames, totalMS, hidden, visible)
 	}
 	if len(zooms) > 0 {
 		writePlaybackZooms(&transitions, diagramHash, durationsMS, totalMS, zoomMS, viewport, offsets, zooms)
@@ -283,6 +314,10 @@ func wrapFrames(rootDiagram *d2target.Diagram, boardPath []string, frames []Fram
 	buf.Write(defs)
 	buf.Write(graphics)
 	for i, frame := range svgs {
+		if native != nil {
+			buf.Write(frame)
+			continue
+		}
 		if len(offsets) > 0 {
 			writeLayerFrame(buf, diagramHash, i, totalMS, slots, true, linkedMatte)
 			fmt.Fprintf(buf, `<g transform="translate(%d %d)">`, offsets[i].X, offsets[i].Y)
@@ -308,6 +343,17 @@ func wrapFrames(rootDiagram *d2target.Diagram, boardPath []string, frames []Fram
 	return buf.Bytes(), nil
 }
 
+func (s frameStart) percentage(ms, total int) string {
+	at := float64(ms) + float64(s.fraction)/float64(time.Millisecond)
+	percent := 100 * at / float64(total)
+	if s.uniform {
+		// Rounding upward can keep the previous pose visible on a display
+		// tick exactly at a uniform tween's sample boundary.
+		percent = math.Floor(percent*1e9) / 1e9
+	}
+	return percentage(percent, 9)
+}
+
 // The three groups own the global clock, the manually selected layer's steps,
 // and its camera. A linked footer uses the same clocks without spatial transforms.
 func writeLayerFrame(buf *bytes.Buffer, hash string, i, totalMS int, slots []layerSlot, artwork, linkedMatte bool) {
@@ -331,14 +377,14 @@ func writeLayerFrame(buf *bytes.Buffer, hash string, i, totalMS int, slots []lay
 }
 
 // Switch whole frames on their authored boundary so shared artwork stays solid.
-func writeFrameKeyframes(buf *bytes.Buffer, name, hash string, frame, start, duration, total int, hidden, visible string) {
+func writeFrameKeyframes(buf *bytes.Buffer, name, hash string, frame, start, duration, total int, from, to frameStart, hidden, visible string) {
 	fmt.Fprintf(buf, "@keyframes %s-%s-%d{", name, hash, frame)
 	if start > 0 {
 		buf.WriteString("0%" + hidden)
 	}
-	buf.WriteString(percentage(100*float64(start)/float64(total), 9) + visible)
+	buf.WriteString(from.percentage(start, total) + visible)
 	if end := start + duration; end < total {
-		buf.WriteString(percentage(100*float64(end)/float64(total), 9) + ",100%" + hidden)
+		buf.WriteString(to.percentage(end, total) + ",100%" + hidden)
 	} else {
 		buf.WriteString("100%" + visible)
 	}

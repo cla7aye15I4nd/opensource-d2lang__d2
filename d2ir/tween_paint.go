@@ -10,7 +10,7 @@ import (
 	d2color "github.com/d2lang/d2/lib/color"
 )
 
-func newTweenPaint(start, end string) (tweenValue, bool) {
+func newTweenPaint(start, end string, inherited bool) (tweenValue, bool) {
 	if start == end {
 		return nil, false
 	}
@@ -19,7 +19,10 @@ func newTweenPaint(start, end string) (tweenValue, bool) {
 		if !fromGradient || !toGradient {
 			return nil, false
 		}
-		return newTweenGradient(start, end)
+		return newTweenGradient(start, end, inherited)
+	}
+	if inherited {
+		return nil, false
 	}
 	// Solid D2 paints accept named colors and three- or six-digit hex.
 	if !d2color.ValidColor(start) || !d2color.ValidColor(end) {
@@ -52,6 +55,8 @@ type tweenGradient struct {
 	start, end      string
 	kind, direction string
 	from, to        []tweenStop
+	// Inherited gradient templates keep the authored spelling of fixed colors.
+	templateStops []d2color.ColorStop
 }
 
 type tweenStop struct {
@@ -59,7 +64,16 @@ type tweenStop struct {
 	offset float64
 }
 
-func newTweenGradient(start, end string) (tweenValue, bool) {
+func (g tweenGradient) movesStops() bool {
+	for i, stop := range g.from {
+		if stop.offset != g.to[i].offset {
+			return true
+		}
+	}
+	return false
+}
+
+func newTweenGradient(start, end string, inherited bool) (tweenValue, bool) {
 	from, err := d2color.ParseGradient(start)
 	if err != nil {
 		return nil, false
@@ -73,20 +87,25 @@ func newTweenGradient(start, end string) (tweenValue, bool) {
 	if !okFrom || !okTo || slices.Equal(first, last) {
 		return nil, false
 	}
-	return tweenGradient{start: start, end: end, kind: to.Type, direction: to.Direction, from: first, to: last}, true
+	g := tweenGradient{start: start, end: end, kind: to.Type, direction: to.Direction, from: first, to: last}
+	if inherited {
+		if !g.movesStops() {
+			return nil, false
+		}
+		g.templateStops = from.ColorStops
+	}
+	return g, true
 }
 
 func resolveTweenStops(gradient d2color.Gradient) ([]tweenStop, bool) {
 	stops := make([]tweenStop, len(gradient.ColorStops))
-	previous := 0.0
 	for i, stop := range gradient.ColorStops {
 		paint, ok := d2color.ParseRGBA(stop.Color)
-		offset, err := stop.Offset(i, len(stops), previous)
+		offset, err := stop.AuthoredOffset(i, len(stops))
 		if !ok || err != nil {
 			return nil, false
 		}
 		stops[i] = tweenStop{color: paint, offset: offset}
-		previous = offset
 	}
 	return stops, true
 }
@@ -140,9 +159,14 @@ func (g tweenGradient) at(fraction float64) string {
 			buf.WriteString(", ")
 		}
 		b := g.to[i]
-		buf.WriteString(d2color.InterpolateHex(a.color, b.color, fraction))
+		if g.templateStops != nil && a.color == b.color {
+			buf.WriteString(g.templateStops[i].Color)
+		} else {
+			buf.WriteString(d2color.InterpolateHex(a.color, b.color, fraction))
+		}
 		buf.WriteByte(' ')
-		offset := a.offset + (b.offset-a.offset)*fraction
+		offset := (1-fraction)*a.offset + fraction*b.offset
+		offset = max(0, min(1, offset))
 		buf.WriteString(strconv.FormatFloat(offset*100, 'g', 15, 64))
 		buf.WriteByte('%')
 	}

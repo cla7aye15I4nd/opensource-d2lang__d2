@@ -176,6 +176,12 @@ func isTweenBoard(m *Map) bool {
 }
 
 func (c *compiler) compileBoardTweens(root *Map, duration int) {
+	type transition struct {
+		board   *Map
+		changes []tweenChange
+	}
+	var transitions []transition
+	authored := 1 // The root is also a render-target board.
 	var last *Map // Last drawable board in depth-first export order.
 	var visit func(board, from *Map)
 	visit = func(board, from *Map) {
@@ -186,7 +192,7 @@ func (c *compiler) compileBoardTweens(root *Map, duration int) {
 		if from != nil && (drawable || NodeBoardKind(board) == BoardStep) {
 			changes := c.boardChanges(from, board)
 			if hasTweenMotion(changes) {
-				c.sampleBoard(board, changes, duration)
+				transitions = append(transitions, transition{board, changes})
 			}
 		}
 		if drawable {
@@ -202,6 +208,7 @@ func (c *compiler) compileBoardTweens(root *Map, duration int) {
 				if c.stopped() || !c.err.Empty() {
 					return
 				}
+				authored++
 				child := field.Map()
 				if child == nil {
 					continue
@@ -223,6 +230,26 @@ func (c *compiler) compileBoardTweens(root *Map, duration int) {
 		}
 	}
 	visit(root, nil)
+	if len(transitions) == 0 || c.stopped() || !c.err.Empty() {
+		return
+	}
+	available := d2target.MaxRenderTargetBoards - authored
+	if available < len(transitions) {
+		c.errorf(transitions[0].board.LastRef().AST(), "animation needs at least one sample per transition within the limit of %d total boards", d2target.MaxRenderTargetBoards)
+		return
+	}
+	// Later passes may animate structure or annotations on the remaining
+	// authored boards. Leave one slot per possible transition when it fits.
+	available -= min(available-len(transitions), authored-1-len(transitions))
+	wanted := d2target.TweenFrameCount(duration)
+	for i, transition := range transitions {
+		if c.stopped() || !c.err.Empty() {
+			return
+		}
+		count := min(wanted, available/(len(transitions)-i))
+		c.sampleBoard(transition.board, transition.changes, duration, count)
+		available -= count
+	}
 }
 
 func tweenVarScopes(board *Map) (scopes []*Map) {
@@ -270,7 +297,7 @@ func tweenScalarChange(start, end string) (tweenValue, bool) {
 	if number, ok := newTweenNumber(start, end); ok {
 		return number, true
 	}
-	return newTweenPaint(start, end)
+	return newTweenPaint(start, end, false)
 }
 
 func newTweenNumber(start, end string) (tweenNumericValue, bool) {
@@ -297,14 +324,20 @@ func (v tweenNumericValue) at(fraction float64) string {
 		return v.end
 	}
 	number := (1-fraction)*v.from + fraction*v.to
-	return strconv.FormatFloat(number, 'f', v.precision, 64) + v.unit
+	sample := strconv.FormatFloat(number, 'f', v.precision, 64)
+	if strings.HasPrefix(sample, "-0") && strings.Trim(sample[1:], "0.") == "" {
+		sample = sample[1:]
+	}
+	return sample + v.unit
 }
 
 func setTweenValue(s *Scalar, value tweenValue, fraction float64) {
 	sample := value.at(fraction)
 	s.Value = d2ast.FlatUnquotedString(sample)
 	s.TweenOffset = 0
-	if number, ok := value.(tweenNumericValue); ok && number.precision >= 0 && number.unit == "" && fraction != 0 && fraction != 1 {
+	number, numeric := value.(tweenNumericValue)
+	s.NumericTween = numeric && number.unit == "" && number.from != number.to
+	if s.NumericTween && number.precision >= 0 && fraction != 0 && fraction != 1 {
 		// Labels preserve the authored precision. Continuous paint properties
 		// can recover the unrounded value, even through a variable alias.
 		exact := (1-fraction)*number.from + fraction*number.to
@@ -341,7 +374,7 @@ func tweenNumber(raw string) (number float64, unit string, precision int, valid 
 	return number, unit, precision, true
 }
 
-func (c *compiler) sampleBoard(board *Map, changes []tweenChange, duration int) {
+func (c *compiler) sampleBoard(board *Map, changes []tweenChange, duration, count int) {
 	// Samples of a board never include its child boards.
 	view := *board
 	view.Fields = nil
@@ -351,9 +384,11 @@ func (c *compiler) sampleBoard(board *Map, changes []tweenChange, duration int) 
 		}
 	}
 	outerVars := tweenVarScopes(ParentMap(board))
-	n := d2target.TweenFrameCount(duration)
-	for i := 0; i < n; i++ {
-		frame := c.sampleTween(&view, changes, outerVars, float64(i)/float64(n))
+	for i := range count {
+		if c.stopped() {
+			return
+		}
+		frame := c.sampleTween(&view, changes, outerVars, float64(i)/float64(count))
 		if frame == nil {
 			return
 		}
