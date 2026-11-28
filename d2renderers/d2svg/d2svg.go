@@ -792,6 +792,7 @@ type connectionEffects struct {
 }
 
 func drawConnection(writer *objectWriter, markerScope string, effects connectionEffects, connection d2target.Connection, defined map[string]struct{}, idToShape map[string]d2target.Shape, sketch bool, inlineTheme *d2themes.Theme, markdown *markdownRenderer) (labelMask string, _ error) {
+	connection.ResolveGradientAngles()
 	if c := connection.MotionClip; c != nil {
 		openMotionViewport(writer, c)
 		defer writer.buf.WriteString("</svg>")
@@ -1408,6 +1409,7 @@ func borderMaskID(shape d2target.Shape, hash string) string {
 }
 
 func drawShape(writer *objectWriter, appendixWriter io.Writer, diagramHash, resourceHash string, targetShape d2target.Shape, sketch bool, inlineTheme *d2themes.Theme, markdown *markdownRenderer) (labelMask string, err error) {
+	targetShape.ResolveGradientAngles()
 	closingTag := "</g>"
 	if c := targetShape.MotionClip; c != nil {
 		openMotionViewport(writer, c)
@@ -2313,11 +2315,14 @@ func renderValidated(ctx context.Context, diagram *d2target.Diagram, opts *Rende
 	definePaint(diagram.Root.Fill)
 	definePaint(diagram.Root.Stroke)
 	for _, shape := range diagram.Shapes {
+		shape.ResolveGradientAngles()
 		definePaint(shape.Fill)
 		definePaint(shape.Stroke)
 		definePaint(shape.Color)
 	}
 	for _, connection := range diagram.Connections {
+		connection.ResolveGradientAngles()
+		definePaint(connection.Color)
 		definePaint(connection.Fill)
 	}
 
@@ -2483,8 +2488,14 @@ func renderValidated(ctx context.Context, diagram *d2target.Diagram, opts *Rende
 	backgroundEl.Y = float64(top)
 	backgroundEl.Width = float64(w)
 	backgroundEl.Height = float64(h)
-	backgroundEl.Fill = diagram.Root.Fill
-	backgroundEl.Stroke = diagram.Root.Stroke
+	backgroundEl.Fill = color.GradientForBox(diagram.Root.Fill, float64(w), float64(h))
+	backgroundEl.Stroke = color.GradientForBox(diagram.Root.Stroke, float64(w), float64(h))
+	if backgroundEl.Fill != diagram.Root.Fill {
+		definePaint(backgroundEl.Fill)
+	}
+	if backgroundEl.Stroke != diagram.Root.Stroke {
+		definePaint(backgroundEl.Stroke)
+	}
 	backgroundEl.FillPattern = diagram.Root.FillPattern
 	if diagram.Root.BorderRadius != 0 || !UsesDefaultStylesheet() {
 		backgroundEl.Rx = float64(diagram.Root.BorderRadius)
