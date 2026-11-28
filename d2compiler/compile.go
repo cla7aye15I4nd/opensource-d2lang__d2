@@ -183,7 +183,7 @@ func (c *compiler) compileBoard(g *d2graph.Graph, ir *d2ir.Map) *d2graph.Graph {
 	// A nested board needs its own IR root for class lookup.
 	if !ir.Root() {
 		if err := d2ir.ReserveVariableExpansionCopy(c.ctx, ir); err != nil {
-			c.fatalErr = err
+			c.fatalErr = fmt.Errorf("%s: copying board content: %w", g.BoardRange, err)
 			return g
 		}
 		ir = ir.Copy(nil).(*d2ir.Map)

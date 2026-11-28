@@ -155,7 +155,7 @@ func Run(ctx context.Context, ms *xmain.State) (err error) {
 	if ms.Env.Getenv("D2_ANIMATE_PROGRESS") == "" {
 		ms.Opts.Flags.Lookup("animate-progress").DefValue = "on with a positive animate-interval"
 	}
-	animateProgressColor := ms.Opts.String("D2_ANIMATE_PROGRESS_COLOR", "animate-progress-color", "", "", "color of the playback progress line (an opaque named color, #RGB, or #RRGGBB). Defaults to the theme's B1 color. Also configurable through vars.d2-config.animate-progress-color.")
+	animateProgressColor := ms.Opts.String("D2_ANIMATE_PROGRESS_COLOR", "animate-progress-color", "", "", "color of the playback progress line (an opaque named color, #RGB, or #RRGGBB). Defaults to the inverse background color, with a black or white fallback for contrast. Also configurable through vars.d2-config.animate-progress-color.")
 	videoDuration := ms.Opts.Flags.Duration("video-duration", 0, "total video playback duration (e.g. 10s or 250ms). By default a video plays the board sequence once. A shorter duration cuts it, and a longer duration repeats it.")
 	videoSizeFlag := ms.Opts.Flags.String("video-size", "", "video canvas in pixels, e.g. 1920x1080. Fits and centers the diagram at this resolution.")
 	videoQualityFlag := ms.Opts.Flags.String("video-quality", "high", "video encoding quality: low, medium, high, or best.")
@@ -186,7 +186,7 @@ func Run(ctx context.Context, ms *xmain.State) (err error) {
 	if err != nil {
 		return err
 	}
-	targetFlag := ms.Opts.String("", "target", "", "*", "target board to render. Pass an empty string to target root board. If target ends with '*', it will be rendered with all of its scenarios, steps, and layers. Otherwise, only the target board will be rendered. E.g. --target='' to render root board only or --target='layers.x.*' to render layer 'x' with all of its children.")
+	targetFlag := ms.Opts.String("", "target", "", "*", "target board to render. Pass '' for the root board alone or '*' for all boards. A plain target such as 'steps.s1' renders only that board, skipping its incoming transition. Use 'steps.s1.*' to include its children and play its incoming transition in an animated export.")
 
 	fontRegularFlag := ms.Opts.String("D2_FONT_REGULAR", "font-regular", "", "", "path to .ttf file to use for the regular font. If none provided, Source Sans Pro Regular is used.")
 	fontItalicFlag := ms.Opts.String("D2_FONT_ITALIC", "font-italic", "", "", "path to .ttf file to use for the italic font. If none provided, Source Sans Pro Regular-Italic is used.")

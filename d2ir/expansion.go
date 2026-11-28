@@ -108,6 +108,18 @@ func (c *compiler) reserveVariableCopy(n d2ast.Node, root Node) bool {
 	return c.handleVariableExpansionWalkError(err)
 }
 
+// Board inheritance uses the compilation-wide expansion budget. Identify
+// the board declaration if copying its inherited content exhausts it.
+func (c *compiler) reserveBoardCopy(source d2ast.Node, m *Map) bool {
+	err := walkVariableExpansion(c.ctx, m, nil, c.variableExpansion.reserve)
+	if _, limited := err.(*variableExpansionLimitError); limited {
+		c.expansionErr = fmt.Errorf("copying board content: %w", err)
+		c.errorf(source, "%v", c.expansionErr)
+		c.halted = true
+	}
+	return c.handleVariableExpansionWalkError(err)
+}
+
 func (c *compiler) reserveVariableASTCopy(source d2ast.Node, root *d2ast.Map) bool {
 	ok := true
 	d2ast.Walk(root, func(node d2ast.Node) bool {
