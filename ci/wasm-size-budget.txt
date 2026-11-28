@@ -18,5 +18,8 @@
 # Brotli. The two-sweep marker SVG drops from 76,175 to 2,355 bytes.
 # Background-aware progress adds color stops for changing boards and a
 # footer-only contrast filter for camera fades. Uniform fills are resolved at export.
-raw 11060000
-brotli 3763000
+# The gradient, label, inheritance and link fixes with continuous playback
+# measured 11,049,194 raw and 3,758,305 Brotli before adaptive progress.
+# Adaptive progress added 14,799 raw and 6,691 Brotli in its paired builds.
+raw 11075000
+brotli 3775000
