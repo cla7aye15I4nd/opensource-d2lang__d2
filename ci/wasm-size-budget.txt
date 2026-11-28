@@ -20,5 +20,5 @@
 # increased the pre-scenario build from 10,924,067 to 10,945,324 bytes raw
 # and from 3,716,648 to 3,725,913 bytes with Brotli. Allow for these fixes
 # alongside continuous motion while retaining the existing toolchain margin.
-raw 11070000
+raw 11060000
 brotli 3775000
