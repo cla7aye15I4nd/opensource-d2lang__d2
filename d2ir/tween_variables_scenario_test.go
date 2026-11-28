@@ -24,7 +24,7 @@ scenarios: {
 `
 	for _, imported := range []bool{false, true} {
 		opts := d2ir.CompileOptions{}
-		source := "vars.d2-config: {animate-interval: 1s; animate-duration: 80ms}\n"
+		source := "vars.d2-config: {animate-interval: 1s; animate-duration: 32ms}\n"
 		if imported {
 			opts.FS = fstest.MapFS{"panel.d2": {Data: []byte("layers.site: {\n" + diagram + "}")}}
 			source += "layers.site: @panel.layers.site"
@@ -63,7 +63,7 @@ scenarios: {
 }
 
 func TestScenarioLocalFallbackKeepsSeenValueWhileOuterVariableMoves(t *testing.T) {
-	const source = `vars: {level: 10; d2-config: {animate-interval: 1s; animate-duration: 80ms}}
+	const source = `vars: {level: 10; d2-config: {animate-interval: 1s; animate-duration: 32ms}}
 reference: ${level}
 panel.meter: ${level}
 scenarios: {
@@ -87,7 +87,7 @@ scenarios: {
 
 func TestScenarioFallbackAcrossIncompatibleVariableTypes(t *testing.T) {
 	for _, scalarOrArray := range []string{"45", "[x; y]"} {
-		const src = `vars: {counter: 10; d2-config: {animate-interval: 1s; animate-duration: 80ms}; palette.fill: blue}
+		const src = `vars: {counter: 10; d2-config: {animate-interval: 1s; animate-duration: 32ms}; palette.fill: blue}
 panel: {
   swatch.style.fill: ${palette.fill}
 }
@@ -123,7 +123,7 @@ layers.site: {
     normal: {}
   }
 }`)}}}
-	root, err := compileTween(t, `vars: {level: 90; d2-config: {animate-interval: 1s; animate-duration: 80ms}}
+	root, err := compileTween(t, `vars: {level: 90; d2-config: {animate-interval: 1s; animate-duration: 32ms}}
 layers.site: @panel.layers.site`, opts)
 	if err != nil {
 		t.Fatal(err)

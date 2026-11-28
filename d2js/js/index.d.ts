@@ -159,6 +159,8 @@ export interface Legend {
 export type Shape = (Class | SQLTable | Text) & ShapeBase;
 
 export interface ShapeBase {
+  /** Add to pos for a continuous translation. A zero offset marks a whole-unit sample. */
+  motionOffset?: { x: number; y: number };
   motionClip?: MotionClip;
   motionLabelTopLeft?: Point;
   /** Authored body bounds for an anchored label during a node entrance. */
@@ -494,6 +496,8 @@ export interface Scalar {
   value: string;
   /** Fractional part retained when a sampled numeric value is rounded. */
   tweenOffset?: number;
+  /** True for an interpolated left or top coordinate on a sampled graph. */
+  tweenedPin?: boolean;
 }
 
 export interface Style {
