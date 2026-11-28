@@ -189,15 +189,14 @@ func wrapFrames(rootDiagram *d2target.Diagram, boardPath []string, frames []Fram
 	// Freeze both the artwork and the matching footer paint while keeping
 	// fragment navigation available for readers who choose another board.
 	fmt.Fprintf(&transitions, "@media(prefers-reduced-motion:reduce){svg[data-d2-animation=%[1]s]>g,.d2-footer-%[1]s>*{animation-play-state:paused!important}}", diagramHash)
-	var progress, matte string
+	var footerSVG string
 	var linkedMatte bool
 	if showProgress {
 		renderOpts.AnimateProgressColor = rootDiagram.Config.ResolveAnimateProgressColor(renderOpts.AnimateProgressColor)
-		progress, err = svgProgress(&transitions, diagramHash, footer, totalMS, renderOpts, len(links) > 0)
+		footerSVG, linkedMatte, err = svgFooter(&transitions, diagramHash, footer, totalMS, renderOpts, rootDiagram, frames, links, slots, hasCamera)
 		if err != nil {
 			return nil, err
 		}
-		matte, linkedMatte = footerMatte(&transitions, diagramHash, footer, totalMS, renderOpts, rootDiagram, frames, len(links) > 0, slots)
 	}
 
 	var native []byte
@@ -213,7 +212,7 @@ func wrapFrames(rootDiagram *d2target.Diagram, boardPath []string, frames []Fram
 			svgs = [][]byte{native}
 		}
 	}
-	needFrameClock = native == nil || needFrameClock || strings.Contains(matte, "d2Transition-")
+	needFrameClock = native == nil || needFrameClock || strings.Contains(footerSVG, "d2Transition-")
 	var defs, graphics []byte
 	if native == nil {
 		defs, svgs = shareStaticShapes(rootDiagram, svgs, diagramHash)
@@ -229,13 +228,13 @@ func wrapFrames(rootDiagram *d2target.Diagram, boardPath []string, frames []Fram
 		styleGraphics = graphics
 		styleFrames = svgs
 	}
-	sourceSize := len(matte) + len(defs) + len(styleGraphics) + len(styleFrames) // One separator per frame.
+	sourceSize := len(footerSVG) + len(defs) + len(styleGraphics) + len(styleFrames) // One separator per frame.
 	for _, frame := range styleFrames {
 		sourceSize += len(frame)
 	}
 	var source strings.Builder
 	source.Grow(sourceSize)
-	source.WriteString(matte) // Keep footer theme tokens when pruning the responsive styles.
+	source.WriteString(footerSVG) // Keep footer theme tokens when pruning the responsive styles.
 	source.Write(defs)
 	source.Write(styleGraphics)
 	for _, frame := range styleFrames {
@@ -309,7 +308,7 @@ func wrapFrames(rootDiagram *d2target.Diagram, boardPath []string, frames []Fram
 	// Reserve room for the artwork and its timing attributes before copying
 	// multi-megabyte frames into the final output buffer.
 	attributeSize := len(stylePrefix) + len(strconv.Itoa(len(svgs))) + len(styleSuffix)
-	artworkSize := len(defs) + len(graphics) + len(matte) + len(progress) + len("</svg></svg>") + len(svgs)*attributeSize
+	artworkSize := len(defs) + len(graphics) + len(footerSVG) + len("</svg></svg>") + len(svgs)*attributeSize
 	for _, frame := range svgs {
 		artworkSize += len(frame)
 	}
@@ -339,8 +338,7 @@ func wrapFrames(rootDiagram *d2target.Diagram, boardPath []string, frames []Fram
 		}
 	}
 	buf.WriteString("</svg>")
-	buf.WriteString(matte)
-	buf.WriteString(progress)
+	buf.WriteString(footerSVG)
 	buf.WriteString("</svg>")
 
 	return buf.Bytes(), nil

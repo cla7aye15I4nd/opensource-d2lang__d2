@@ -245,7 +245,7 @@ acceptance before the draft can be uploaded.
 ## build.sh
 
 Release verification limits each binary to 45,000,000 bytes and each archive to
-19,050,000 bytes across all six release targets.
+19,065,000 bytes across all six release targets.
 
 - ./build.sh builds the release archives for each platform into ./build/<VERSION>/*.tar.gz
   Run with --help for usage.

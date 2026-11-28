@@ -16,5 +16,7 @@
 # Continuous SVG motion adds track planning and fractional geometry. With
 # scenario interpolation the module measures 11,034,380 raw and 3,753,779
 # Brotli. The two-sweep marker SVG drops from 76,175 to 2,355 bytes.
-raw 11045000
+# Background-aware progress adds color stops for changing boards and a
+# footer-only contrast filter for camera fades. Uniform fills are resolved at export.
+raw 11060000
 brotli 3763000
