@@ -229,21 +229,29 @@ func assertVariableExpansionError(t *testing.T, err error, limit int64) {
 	}
 }
 
-func TestStepInheritanceBudget(t *testing.T) {
-	var src strings.Builder
-	for n := 0; n < 9; n++ {
-		fmt.Fprintf(&src, "n%d -> n%d\n", n, n+1)
-	}
-	src.WriteString("steps: {\n")
-	for step := 0; step < 27; step++ {
-		fmt.Fprintf(&src, "  s%d: {n%d.style.fill: \"#ffe8cc\"}\n", step, step%10)
-	}
-	src.WriteString("}\n")
-	g, _, err := d2compiler.Compile("steps.d2", strings.NewReader(src.String()), nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(g.Steps) != 27 || len(g.Steps[26].Objects) != 10 {
-		t.Fatal("inherited board content missing")
+func TestBoardInheritanceBudget(t *testing.T) {
+	for _, kind := range []string{"steps", "scenarios"} {
+		t.Run(kind, func(t *testing.T) {
+			var src strings.Builder
+			for n := 0; n < 9; n++ {
+				fmt.Fprintf(&src, "n%d -> n%d\n", n, n+1)
+			}
+			fmt.Fprintf(&src, "%s: {\n", kind)
+			for board := 0; board < 27; board++ {
+				fmt.Fprintf(&src, "  s%d: {n%d.style.fill: \"#ffe8cc\"}\n", board, board%10)
+			}
+			src.WriteString("}\n")
+			g, _, err := d2compiler.Compile(kind+".d2", strings.NewReader(src.String()), nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			boards := g.Steps
+			if kind == "scenarios" {
+				boards = g.Scenarios
+			}
+			if len(boards) != 27 || len(boards[26].Objects) != 10 {
+				t.Fatal("inherited board content missing")
+			}
+		})
 	}
 }

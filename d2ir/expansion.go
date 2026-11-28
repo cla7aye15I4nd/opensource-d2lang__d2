@@ -200,19 +200,6 @@ func ReserveVariableExpansionCopy(ctx context.Context, m *Map) error {
 	return walkVariableExpansion(ctx, m, nil, budget.reserve)
 }
 
-// ReserveBoardBaseCopy charges the inherited content, excluding nested boards
-// which CopyBase omits. Edges removed by CopyBase are conservatively counted.
-func ReserveBoardBaseCopy(ctx context.Context, m *Map) error {
-	if m == nil {
-		return fmt.Errorf("cannot reserve a board base copy for a nil IR map")
-	}
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	base, _ := m.baseCopyView()
-	return walkVariableExpansion(ctx, &base, nil, ensureVariableExpansionBudget(m).reserve)
-}
-
 // walkVariableExpansion walks logical occurrences rather than unique pointers.
 // When seen is non-nil, only repeated occurrences consume budget.
 func walkVariableExpansion(ctx context.Context, root Node, seen map[Node]struct{}, reserve func(int64) error) error {
