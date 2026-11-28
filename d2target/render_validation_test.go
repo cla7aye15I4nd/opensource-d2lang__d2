@@ -3,6 +3,7 @@ package d2target
 import (
 	"encoding/json"
 	"math"
+	"net/url"
 	"slices"
 	"strings"
 	"testing"
@@ -40,6 +41,25 @@ func TestValidateConnectionIconAnimation(t *testing.T) {
 	c.IconPositions = make([]geo.Point, MaxMovingIconsPerConnection+1)
 	if err := validateRenderConnectionNumbers(c, "edge"); err == nil || !strings.Contains(err.Error(), "iconPositions") {
 		t.Errorf("too many sampled icons: %v", err)
+	}
+}
+
+func TestValidateConnectionIconShapes(t *testing.T) {
+	c := BaseConnection()
+	c.IconPosition = "INSIDE_MIDDLE_CENTER"
+	for _, shape := range []string{"circle", "square", "triangle", "diamond"} {
+		c.IconShape = shape
+		if err := c.ValidateIconMotion("edge"); err != nil {
+			t.Errorf("shape %q: %v", shape, err)
+		}
+	}
+	c.IconShape = "rectangle"
+	if err := c.ValidateIconMotion("edge"); err == nil || !strings.Contains(err.Error(), "iconShape") {
+		t.Errorf("unsupported shape: %v", err)
+	}
+	c.IconShape, c.Icon = ShapeSquare, &url.URL{Path: "image.svg"}
+	if err := c.ValidateIconMotion("edge"); err == nil || !strings.Contains(err.Error(), "image URL") {
+		t.Errorf("shape and image: %v", err)
 	}
 }
 
@@ -235,5 +255,35 @@ func TestRenderTargetProgressColor(t *testing.T) {
 	d.Config.AnimateProgressColor = "red;stroke:blue"
 	if err := ValidateRenderTarget(d); err == nil || !strings.Contains(err.Error(), "root.config.animateProgressColor") {
 		t.Fatalf("expected invalid serialized progress color diagnostic, got %v", err)
+	}
+}
+
+func TestMotionOffsetBoundsAndValidation(t *testing.T) {
+	d := NewDiagram()
+	s := BaseShape()
+	s.ID, s.Width, s.Height, s.StrokeWidth = "moving", 10, 5, 0
+	s.MotionOffset = geo.NewPoint(-.25, .5)
+	d.Shapes = []Shape{*s}
+	if err := ValidateRenderTarget(d); err != nil {
+		t.Fatal(err)
+	}
+	if tl, br := d.InkBoundingBox(); tl != (Point{-1, 0}) || br != (Point{10, 6}) {
+		t.Fatalf("subpixel ink bounds = %v ... %v", tl, br)
+	}
+	s.Annotation = &Annotation{Shape: AnnotationCircle}
+	d.Shapes[0] = *s
+	withMotion := d.AnnotationMarks()[0]
+	d.Shapes[0].MotionOffset = nil
+	atRest := d.AnnotationMarks()[0]
+	a, b := withMotion.Strokes[0][0], atRest.Strokes[0][0]
+	// Mark strokes are snapped to tenths after their geometry is built.
+	if math.Abs((a.X-b.X)+.25) > .051 || math.Abs((a.Y-b.Y)-.5) > .051 {
+		t.Fatalf("annotation did not follow the moving shape: %v, %v", a, b)
+	}
+	for _, bad := range []float64{1, -1, math.NaN(), math.Inf(1)} {
+		d.Shapes[0].MotionOffset = geo.NewPoint(0, bad)
+		if err := ValidateRenderTarget(d); err == nil || !strings.Contains(err.Error(), "motionOffset") {
+			t.Fatalf("accepted invalid offset %v: %v", bad, err)
+		}
 	}
 }

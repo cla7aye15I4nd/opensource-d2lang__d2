@@ -206,7 +206,7 @@ func TestPlainLinkToStoppedStream(t *testing.T) {
 	nav := NewLayerNavigation(root, nil)
 	links := layerLinks(nav, frames, 650)
 	var css bytes.Buffer
-	writeLayerIconClocks(&css, "test", links, layerSlots(nav, frames, links))
+	writeLayerIconClocks(&css, "test", links, layerSlots(nav, frames, links), "")
 	if !bytes.Contains(css.Bytes(), []byte("calc(var(--d2-click-time,0ms) + var(--d2-icon-delay,0s))")) {
 		t.Fatal("plain board links must start draining immediately")
 	}
@@ -424,5 +424,44 @@ func TestFullIconStreamWaitsForSlotAfterStop(t *testing.T) {
 	s := timeline.ScenePicture(resume, Frame{Diagram: resume, DurationMS: 1}).Connections[0].IconSchedule
 	if len(s.Carried) != d2target.MaxMovingIconsPerConnection || math.Abs(s.First-.008) > 1e-10 {
 		t.Fatalf("the full wire should wait for its first arrival in 8ms: carried=%d, first=%g", len(s.Carried), s.First)
+	}
+}
+
+func TestScenarioIconsCarryOnlyAcrossEligibleTweens(t *testing.T) {
+	root, stopped, later := iconTestBoard(2), iconTestBoard(0), iconTestBoard(0)
+	edgeID := root.Connections[0].ID
+	stopped.Connections[0].IconAnimation.PreviousID = &edgeID
+	later.Connections[0].IconAnimation.PreviousID = &edgeID
+	root.Scenarios = []*d2target.Diagram{stopped, later}
+	// The intervening layer has the same connection ID and moving artwork.
+	// Its icons cannot continue into the enclosing board's next scenario.
+	stopped.Layers = []*d2target.Diagram{iconTestBoard(2)}
+	// A precompiled target can explicitly continue just one of several
+	// parallel streams. The other connection has an independent clock.
+	for _, board := range []*d2target.Diagram{root, stopped} {
+		extra := board.Connections[0]
+		extra.ID = "(a -> b)[1]"
+		extra.IconAnimation = &d2target.ConnectionIconAnimation{Rate: extra.IconAnimation.Rate}
+		board.Connections = append(board.Connections, extra)
+	}
+	tl, err := NewIconTimeline(root, 650)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !tl.Active(stopped) || tl.Active(later) {
+		t.Fatal("an interrupted scenario comparison inherited the wrong in-flight stream")
+	}
+	atStart := tl.Sample(stopped, stopped, 0)
+	if len(atStart.Connections[0].IconPositions) == 0 || len(atStart.Connections[1].IconPositions) != 0 {
+		t.Fatal("the two parallel scenario streams did not follow their individual origins")
+	}
+	if got := len(tl.Sample(stopped, stopped, 2200).Connections[0].IconPositions); got != 0 {
+		t.Fatalf("stopped scenario still has %d icons after its last arrival", got)
+	}
+	// The same alternatives in interval-only playback have independent clocks.
+	stopped.Connections[0].IconAnimation.PreviousID = nil
+	tl, err = NewIconTimeline(root, 650)
+	if err != nil || tl.Active(stopped) {
+		t.Fatalf("an independent scenario inherited a stream: %v", err)
 	}
 }

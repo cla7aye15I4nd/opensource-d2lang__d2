@@ -1,6 +1,7 @@
 package d2ir_test
 
 import (
+	"slices"
 	"strconv"
 	"testing"
 
@@ -9,7 +10,7 @@ import (
 
 func TestDirectNumericProperties(t *testing.T) {
 	const source = `
-vars: {d2-config: {animate-interval: 1s; animate-duration: 80ms}}
+vars: {d2-config: {animate-interval: 1s; animate-duration: 32ms}}
 classes: {card: {style.stroke-width: 1}}
 card: {class: card; width: 100; height: 60; style: {opacity: 0; border-radius: 0; font-size: 12}}
 card -> peer: {style.stroke-dash: 0}
@@ -67,7 +68,7 @@ func TestDirectDimensionsKeepEqualSidedShapesValid(t *testing.T) {
 		} {
 			t.Run(shape+"/"+tc.name, func(t *testing.T) {
 				root, err := compileTween(t, `
-vars: {d2-config: {animate-interval: 1s; animate-duration: 80ms}}
+vars: {d2-config: {animate-interval: 1s; animate-duration: 32ms}}
 node: {`+tc.before+`; style.opacity: 0}
 steps: {change: {node: {width: 100; height: 100; shape: `+shape+`; style.opacity: 1}}}
 `, d2ir.CompileOptions{})
@@ -95,7 +96,7 @@ steps: {change: {node: {width: 100; height: 100; shape: `+shape+`; style.opacity
 func TestDirectDimensionsWithMovingVariableOnShapeChange(t *testing.T) {
 	for _, width := range []string{"width: ${wide}", "class: shared-width"} {
 		root, err := compileTween(t, `
-vars: {d2-config: {animate-interval: 1s; animate-duration: 80ms}; wide: 60}
+vars: {d2-config: {animate-interval: 1s; animate-duration: 32ms}; wide: 60}
 classes: {shared-width: {width: ${wide}}}
 item: {`+width+`; height: 80}
 another: {width: ${wide}}
@@ -116,7 +117,7 @@ steps: {change: {vars: {wide: 100}; item: {shape: circle; height: 100}}}
 func TestDirectIntegerPropertyNearPlatformLimit(t *testing.T) {
 	maxInt := int(^uint(0) >> 1)
 	root, err := compileTween(t, `
-vars: {d2-config: {animate-interval: 1s; animate-duration: 80ms}}
+vars: {d2-config: {animate-interval: 1s; animate-duration: 32ms}}
 node.style.border-radius: "`+strconv.Itoa(maxInt-100)+`"
 steps: {change: {node.style.border-radius: "`+strconv.Itoa(maxInt)+`"}}
 `, d2ir.CompileOptions{})
@@ -142,5 +143,89 @@ steps: {pause: {}}
 	pause := tweenField(root, "steps", "pause").Map()
 	if len(pause.TweenFrames) != 0 || pause.TweenDurationMS != 0 {
 		t.Fatalf("unchanged step generated %d frames over %dms", len(pause.TweenFrames), pause.TweenDurationMS)
+	}
+}
+
+func TestGeometryEasesIndependentlyOfVariableValues(t *testing.T) {
+	root, err := compileTween(t, `
+vars: {d2-config: {animate-interval: 1s; animate-duration: 64ms}; n: 100; alias: ${n}}
+classes: {sized: {height: ${alias}}}
+group: {
+  width: 100
+  child: "Value ${n}" {left: ${alias}; top: 50; class: sized; style.font-size: ${n}}
+}
+source -> group.child: {target-arrowhead.width: ${alias}}
+steps: {move: {vars.n: 200; group.width: 200; group.child.top: -50}}
+`, d2ir.CompileOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	step := tweenField(root, "steps", "move").Map()
+	frames := append(slices.Clone(step.TweenFrames), step)
+	if len(frames) != 5 {
+		t.Fatalf("got %d samples including endpoint, want 5", len(frames))
+	}
+	for i, want := range []struct{ size, top, value string }{
+		{"100", "50", "100"}, {"106", "44", "125"}, {"150", "0", "150"},
+		{"194", "-44", "175"}, {"200", "-50", "200"},
+	} {
+		frame := frames[i]
+		child := tweenField(frame, "group", "child").Map()
+		if got := tweenText(t, frame, "group", "width"); got != want.size {
+			t.Errorf("frame %d container width = %s, want %s", i, got, want.size)
+		}
+		if got := tweenText(t, child, "left"); got != want.size {
+			t.Errorf("frame %d variable left = %s, want %s", i, got, want.size)
+		}
+		if i < len(step.TweenFrames) {
+			if got := tweenText(t, child, "height"); got != want.size {
+				t.Errorf("frame %d class height = %s, want %s", i, got, want.size)
+			}
+		}
+		if got := tweenText(t, child, "top"); got != want.top {
+			t.Errorf("frame %d direct top = %s, want %s", i, got, want.top)
+		}
+		if got := tweenText(t, frame, "group", "child"); got != "Value "+want.value {
+			t.Errorf("frame %d label = %q, want Value %s", i, got, want.value)
+		}
+		if got := tweenText(t, frame.Edges[0].Map(), "target-arrowhead", "width"); got != want.value {
+			t.Errorf("frame %d arrowhead width = %s, want %s", i, got, want.value)
+		}
+		if got := tweenText(t, child, "style", "font-size"); got != want.value {
+			t.Errorf("frame %d font size = %s, want %s", i, got, want.value)
+		}
+	}
+}
+
+func TestScenarioGeometryReturnsToParentBinding(t *testing.T) {
+	root, err := compileTween(t, `
+vars: {d2-config: {animate-interval: 1s; animate-duration: 64ms}; load: 100; capacity: 100}
+classes: {card: {left: ${load}; width: ${capacity}}}
+api: "Load ${load}" {class: card}
+scenarios: {
+  burst: {vars: {load: 200; capacity: 50}; api.width: 100}
+  steady: {}
+}
+`, d2ir.CompileOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	steady := tweenField(root, "scenarios", "steady").Map()
+	if len(steady.TweenFrames) != 4 {
+		t.Fatalf("got %d samples, want 4", len(steady.TweenFrames))
+	}
+	for i, want := range []struct{ left, label string }{
+		{"200", "Load 200"}, {"194", "Load 175"}, {"150", "Load 150"}, {"106", "Load 125"},
+	} {
+		frame := steady.TweenFrames[i]
+		if got := tweenText(t, frame, "api", "left"); got != want.left {
+			t.Errorf("frame %d: left = %s, want %s", i, got, want.left)
+		}
+		if got := tweenText(t, frame, "api"); got != want.label {
+			t.Errorf("frame %d: label = %s, want %s", i, got, want.label)
+		}
+		if got := tweenText(t, frame, "api", "width"); got != "100" {
+			t.Errorf("frame %d: width = %s, want 100 at both endpoints", i, got)
+		}
 	}
 }

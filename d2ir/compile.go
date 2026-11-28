@@ -123,7 +123,7 @@ type CompileOptions struct {
 	Partial bool
 	// AnimateDuration overrides the root animate-duration, in milliseconds.
 	AnimateDuration *int64
-	// AnimateTweens controls sampling of step transitions. Nil follows
+	// AnimateTweens controls sampling of step and scenario transitions. Nil follows
 	// the root animate-interval. False compiles only the authored endpoints.
 	AnimateTweens *bool
 	// Context stops parsing and compilation when canceled. A nil Context is
@@ -520,7 +520,8 @@ func (c *compiler) validateConfigs(configs *Field) {
 		}
 
 		name := f.Name.ScalarString()
-		if name == "animate-progress" || name == "animate-progress-color" || name == "animate-duration" {
+		switch name {
+		case "animate-interval", "animate-duration", "animate-progress", "animate-progress-color":
 			board := ParentMap(ParentMap(configs))
 			if !board.Root() {
 				global := RootMap(board).getFieldIndexed(d2ast.FlatUnquotedString("vars"), configs.Name, f.Name)
@@ -814,6 +815,7 @@ func (c *compiler) resolveSubstitutions(varsStack []*Map, node Node) (removedFie
 						node.Primary().markdown = value.markdown
 						node.Primary().globPattern = value.globPattern
 						node.Primary().TweenOffset = value.TweenOffset
+						node.Primary().NumericTween = value.NumericTween
 					} else {
 						s.Value[i].String = go2.Pointer(resolvedField.Primary().Value.ScalarString())
 						subbed = true
@@ -890,6 +892,7 @@ func (c *compiler) resolveSubstitutions(varsStack []*Map, node Node) (removedFie
 				s.Value[i].String = go2.Pointer(primary.Value.ScalarString())
 				if len(s.Value) == 1 {
 					node.Primary().TweenOffset = primary.TweenOffset
+					node.Primary().NumericTween = primary.NumericTween
 				}
 				subbed = true
 			}

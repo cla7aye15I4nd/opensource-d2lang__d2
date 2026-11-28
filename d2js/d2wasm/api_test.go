@@ -241,8 +241,32 @@ steps: {drain: {vars: {charge: 0%}}}`
 	}
 }
 
+func TestRenderScenarioSubtreeAndEndpoint(t *testing.T) {
+	source := `vars: {charge: 100%; d2-config: {animate-interval: 200ms; animate-duration: 32ms}}
+bar: "${charge}"
+scenarios: {empty: {vars.charge: 0%}; half: {vars.charge: 50%}}`
+	compiled, err := Compile(wasmJSONArgument(t, CompileRequest{FS: map[string]string{"index": source}}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	diagram := compiled.(CompileResponse).Diagram
+	for _, tc := range []struct {
+		target   string
+		animated bool
+	}{{"scenarios.half.*", true}, {"scenarios.half", false}} {
+		out, err := Render(wasmJSONArgument(t, RenderRequest{Diagram: &diagram, Opts: &RenderOptions{Target: &tc.target}}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		svg := string(out.([]byte))
+		if !strings.Contains(svg, ">50%</text>") || strings.Contains(svg, ">25%</text>") != tc.animated || strings.Contains(svg, ">100%</text>") {
+			t.Errorf("target %s rendered the wrong scenario transition", tc.target)
+		}
+	}
+}
+
 func TestRenderSketchAnimationAfterCompile(t *testing.T) {
-	const source = `vars: {d2-config: {animate-duration: 120ms; animate-interval: 200ms}}
+	const source = `vars: {d2-config: {animate-duration: 50ms; animate-interval: 200ms}}
 replica: Replica {style.fill: white}
 layers: {
   restore: {
@@ -297,7 +321,7 @@ layers: {
 }
 
 func TestRenderSVGAnimateDuration(t *testing.T) {
-	const source = `vars: {d2-config: {animate-duration: 80ms; animate-interval: 100ms}; charge: 100%}
+	const source = `vars: {d2-config: {animate-duration: 100ms; animate-interval: 100ms}; charge: 100%}
 bar: "${charge}"
 steps: {empty: {vars: {charge: 0%}}}`
 	for _, tc := range []struct {

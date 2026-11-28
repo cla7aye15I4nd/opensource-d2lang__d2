@@ -59,6 +59,15 @@ type tweenStop struct {
 	offset float64
 }
 
+func (g tweenGradient) movesStops() bool {
+	for i, stop := range g.from {
+		if stop.offset != g.to[i].offset {
+			return true
+		}
+	}
+	return false
+}
+
 func newTweenGradient(start, end string) (tweenValue, bool) {
 	from, err := d2color.ParseGradient(start)
 	if err != nil {

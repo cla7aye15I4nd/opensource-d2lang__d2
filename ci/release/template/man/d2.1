@@ -167,25 +167,31 @@ Zero selects ordinary SVG export.
 Video exports and multiboard GIFs default to 1000ms per board. GIFs allow time for icon departures and derive a single-board loop from the animation.
 .Ns .
 .It Fl -animate-duration Ar 0
-Set the transition duration for changes to numeric properties, colors, and grid layouts between steps.
+Set the transition duration for changes to numeric properties, colors, and grid layouts across steps and scenarios.
 For linked layers, a positive duration zooms through the enclosing shape on entry or return.
 A move between sibling layers passes through their shared parent within the same duration.
 In a standalone SVG, following a board link pauses the automatic tour.
-Changes between steps can be authored directly or through variables.
-Direct numeric changes include opacity, stroke-width, stroke-dash, border-radius, font-size, width, and height.
+A scenario inherits its parent. During playback, it can animate from the parent
+or from the preceding visible sibling scenario. An intervening layer or nested
+board breaks that comparison. A tour of scenarios cuts back to the opening
+board when the loop repeats.
+Changes can be authored directly or through variables.
+Direct numeric changes include opacity, stroke-width, stroke-dash, border-radius, font-size, left, top, width, and height.
+Pinned positions, shape dimensions, grid moves, and fades to or from zero opacity use cubic ease-in-out.
 Compatible gradients have the same kind, direction, and number of stops.
 Each stop interpolates its color and position.
 In grids, cells with the same ID move to their new positions.
-New cells grow in and removed cells shrink away.
+New cells ease into view as they grow. Removed cells ease out as they shrink.
 D2 also animates complete row or column changes, replacements in a fixed slot,
 and cells that expand or collapse a nested grid.
-In TALA steps, connections can draw toward arriving nodes, containers can form
+Individual nodes can also grow in or shrink away when surviving shapes and connections keep their positions and appearance.
+In TALA steps and scenarios, connections can draw toward arriving nodes, containers can form
 around their contents, and services can move between containers.
 Appended SQL rows can drop into place and sequence messages can trace from sender to receiver.
 The flag takes milliseconds. The file also accepts durations, for example
 .Li "vars: {d2-config: {animate-interval: 800ms; animate-duration: 300ms}}" .
 All interpolated values change together for 300ms, then hold their values for the remaining 500ms.
-A longer transition extends the step to its duration.
+A longer transition extends the board to its duration.
 The duration defaults to zero, which disables interpolation, and accepts values up to ten minutes.
 The flag takes precedence over D2_ANIMATE_DURATION, which takes precedence over the file.
 Static exports show the authored values.
@@ -193,7 +199,12 @@ Static exports show the authored values.
 .It Fl -animate-progress
 Show elapsed playback time as a thin line at the bottom of an animated SVG, GIF, MP4, or WebM.
 The line uses the theme's B1 color and stays fixed during camera moves.
-Its height is six output pixels in GIF, MP4, and WebM, and six diagram units in SVG.
+Its height is 1% of the shorter canvas dimension, rounded to the nearest pixel
+and limited to two through six pixels (one on a single-row canvas).
+The line sits at least eight pixels below the diagram's padded area.
+An explicit
+.Fl -video-size
+includes this space within the requested dimensions.
 The line appears by default when the effective
 .Fl -animate-interval
 or source interval is positive.
@@ -221,9 +232,9 @@ Set the total length of an MP4 or WebM export, for example
 By default, a video plays the selected boards once.
 A shorter duration trims the tour and a longer duration repeats it.
 For a single board, independent effects animate throughout the clip.
-Motion is sampled at 30 frames per second.
+Motion is sampled at 60 frames per second.
 Still frames retain their playback duration.
-Durations round up to the next 1/30 second.
+Durations round up to the next 1/60 second.
 Encoding requires
 .Cm ffmpeg
 version 5.1 or newer on PATH with libx264 for MP4 or libvpx-vp9 for WebM.
@@ -236,9 +247,9 @@ Choose either a video size or a positive
 .Fl -scale
 on the command line.
 Each dimension must be even and at least 48 pixels.
-Both formats use the same canvas limits for portable playback. The coded width
+Both formats use the same canvas limits. The coded width
 is at most 4096 pixels and the height at most 2304, subject to the H.264
-Level 5.1 macroblock limit at 30 fps.
+Level 5.2 macroblock limit at 60 fps.
 .It Fl -video-quality Ar low|medium|high|best
 Select the encoding quality for MP4 or WebM.
 The default is high.

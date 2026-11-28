@@ -142,7 +142,7 @@ func Run(ctx context.Context, ms *xmain.State) (err error) {
 	if err != nil {
 		return err
 	}
-	animateDurationFlag, err := ms.Opts.Int64("D2_ANIMATE_DURATION", "animate-duration", "", 0, "milliseconds to animate transitions into and out of linked layers and step changes to numeric properties, solid colors, compatible gradients, variables, grid layouts, and supported TALA structural edits (0 disables interpolation). Also configurable through vars.d2-config.animate-duration.")
+	animateDurationFlag, err := ms.Opts.Int64("D2_ANIMATE_DURATION", "animate-duration", "", 0, "milliseconds to animate transitions into and out of linked layers and step or scenario changes to numeric properties, solid colors, compatible gradients, variables, grid layouts, node additions and removals, and supported TALA structural edits (0 disables interpolation). Shape movement, resizing, entrances, and exits ease in and out. Also configurable through vars.d2-config.animate-duration.")
 	if err != nil {
 		return err
 	}
@@ -856,16 +856,15 @@ func compile(ctx context.Context, ms *xmain.State, fs fs.FS, layout *string, ren
 				// An explicitly selected, empty board is still a single image.
 				timeline = append(timeline, d2animate.Frame{Diagram: diagram, DurationMS: int(animateInterval)})
 			}
-			svgs := make([][]byte, 0, len(timeline))
-			for _, frame := range timeline {
+			timeline, svgs, err := d2animate.RenderSVGFrames(diagram, resolvedPath, timeline, renderOpts, layerDuration, func(picture *d2target.Diagram) ([]byte, error) {
 				if err := ctx.Err(); err != nil {
-					return nil, false, err
+					return nil, err
 				}
-				svg, _, err := _renderWithPNGEncoder(ctx, ms, renderOpts, inputPath, outputPath, bundle, forceAppendix, ruler, frame.Picture(), ext, asciiMode, wantPreview, nil)
-				if err != nil {
-					return nil, false, err
-				}
-				svgs = append(svgs, svg)
+				svg, _, err := _renderWithPNGEncoder(ctx, ms, renderOpts, inputPath, outputPath, bundle, forceAppendix, ruler, picture, ext, asciiMode, wantPreview, nil)
+				return svg, err
+			})
+			if err != nil {
+				return nil, false, err
 			}
 			out, err := d2animate.WrapTimeline(diagram, resolvedPath, timeline, svgs, renderOpts, layerDuration)
 			if err != nil {

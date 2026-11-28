@@ -19,7 +19,7 @@ import (
 )
 
 const (
-	videoFPS                  = 30
+	videoFPS                  = d2target.TweenFPS
 	videoMaxDuration          = time.Hour
 	videoMaxFramePixels int64 = 4096 * 2160
 	// Bound total coded pixels separately from peak raster and scene work.
@@ -27,12 +27,13 @@ const (
 )
 
 type videoSegment struct {
+	translations map[string]d2scene.Track
 	d2animate.Frame
 	rasterPlacement
 	start, end  time.Duration
 	route       []d2animate.LayerLeg
 	movingUntil time.Duration // local board clock
-	matte       color.RGBA
+	matte       rasterMattes
 }
 
 type videoTimeline struct {
@@ -62,21 +63,20 @@ func planVideo(root *d2target.Diagram, intervalMS int, layers gifLayerOptions, d
 	}
 	p := &videoTimeline{exact: make(map[*d2target.Diagram]int), zoom: time.Duration(layers.duration) * time.Millisecond}
 	var boards []*d2target.Diagram
-	for i, f := range frames {
+	for _, f := range frames {
 		if !f.TweenSample {
 			boards = append(boards, f.Diagram)
-			p.exact[f.Diagram] = i
 		}
 	}
-	viewports := gifViewports(root, boards)
+	viewports := gifViewports(root, boards, layers.duration > 0)
 	var nav *d2animate.LayerNavigation
 	if p.zoom > 0 {
 		nav = d2animate.NewLayerNavigation(root, layers.boardPath)
 	}
 	// The finite tour finishes on its last board. A longer explicit clip
 	// repeats the tour and can follow the return portal into its next lap.
-	var boardIndex int
-	for i, f := range frames {
+	var boardIndex, firstTween int
+	for _, f := range frames {
 		s := videoSegment{Frame: f, start: p.period, movingUntil: rasterMovingUntil(f.Picture())}
 		if v := viewports[f.Diagram]; v != nil {
 			s.viewport = v
@@ -84,6 +84,18 @@ func planVideo(root *d2target.Diagram, intervalMS int, layers gifLayerOptions, d
 			v.bounds = v.bounds.Union(image.Rect(tl.X, tl.Y, br.X, br.Y))
 		}
 		if !f.TweenSample {
+			if len(p.segments) > firstTween && viewports[f.Diagram] != nil {
+				if tracks := d2animate.TranslationTracks(f.Diagram); tracks != nil {
+					incoming := &p.segments[firstTween]
+					incoming.end = s.start
+					incoming.DurationMS = f.ElapsedMS
+					incoming.movingUntil = incoming.end - incoming.start
+					incoming.translations = tracks
+					p.segments = p.segments[:firstTween+1]
+				}
+			}
+			p.exact[f.Diagram] = len(p.segments)
+			firstTween = len(p.segments) + 1
 			if nav != nil && boardIndex+1 < len(boards) {
 				next := boards[boardIndex+1]
 				if len(next.TweenFrames) == 0 {
@@ -96,10 +108,14 @@ func planVideo(root *d2target.Diagram, intervalMS int, layers gifLayerOptions, d
 			s.DurationMS = max(s.DurationMS, layers.duration)
 		}
 		if int64(s.DurationMS) > (math.MaxInt64-int64(s.start))/int64(time.Millisecond) {
-			return nil, fmt.Errorf("video timeline duration overflows at segment %d", i)
+			return nil, fmt.Errorf("video timeline duration overflows at segment %d", len(p.segments))
 		}
 		s.end = s.start + time.Duration(s.DurationMS)*time.Millisecond
 		p.period = s.end
+		if offset := f.StartFraction(); offset != 0 {
+			s.start += offset
+			p.segments[len(p.segments)-1].end = s.start
+		}
 		p.segments = append(p.segments, s)
 	}
 	last := &p.segments[len(p.segments)-1]
@@ -137,7 +153,7 @@ func (p *videoTimeline) sample(index int) (segment int, local time.Duration, rep
 	}
 	segment = sort.Search(len(p.segments), func(i int) bool { return p.segments[i].end > inCycle })
 	s := &p.segments[segment]
-	local = time.Duration(s.ElapsedMS)*time.Millisecond + inCycle - s.start
+	local = time.Duration(s.ElapsedMS)*time.Millisecond + s.StartFraction() + inCycle - s.start
 	stop := s.end
 	if len(s.route) > 0 {
 		stop -= p.zoom
@@ -241,6 +257,26 @@ func emitVideoHold(frame image.Image, repeats int, final bool, emit func(image.I
 	return emit(frame, repeats)
 }
 
+// The rasterizer composites settled scenes onto an opaque background, and
+// camera frames arrive already composited onto their matte. At alpha 255,
+// NRGBA and RGBA share the same bytes, so placing either requires only a copy.
+func placeVideoFrame(dst *image.RGBA, frame draw.Image, origin image.Point, matte color.Color) {
+	bounds := dst.Bounds()
+	target := frame.Bounds().Add(origin)
+	// Clear every uncovered row or column on every pose: the previous
+	// board may have occupied a different rectangle or used another matte.
+	fill := image.NewUniform(matte)
+	draw.Draw(dst, image.Rect(bounds.Min.X, bounds.Min.Y, bounds.Max.X, target.Min.Y), fill, image.Point{}, draw.Src)
+	draw.Draw(dst, image.Rect(bounds.Min.X, target.Min.Y, target.Min.X, target.Max.Y), fill, image.Point{}, draw.Src)
+	draw.Draw(dst, image.Rect(target.Max.X, target.Min.Y, bounds.Max.X, target.Max.Y), fill, image.Point{}, draw.Src)
+	draw.Draw(dst, image.Rect(bounds.Min.X, target.Max.Y, bounds.Max.X, bounds.Max.Y), fill, image.Point{}, draw.Src)
+
+	if opaque, ok := frame.(*image.NRGBA); ok {
+		frame = &image.RGBA{Pix: opaque.Pix, Stride: opaque.Stride, Rect: opaque.Rect}
+	}
+	draw.Draw(dst, target, frame, frame.Bounds().Min, draw.Src)
+}
+
 // emit consumes opaque, fixed-size images synchronously. The backing pixels
 // are reused after it returns. No encoded or full-frame history is retained.
 func renderVideoFrames(ctx context.Context, inputPath string, cacheImages bool, diagram *d2target.Diagram, opts d2svg.RenderOpts, intervalMS int, layers gifLayerOptions, duration time.Duration, forceAppendix bool, size videoSize, emit func(image.Image, int) error) error {
@@ -301,6 +337,7 @@ func renderVideoFrames(ctx context.Context, inputPath string, cacheImages bool, 
 		}
 		s := &p.segments[index]
 		limits := buildLimits
+		limits.translations = s.translations
 		if s.viewport != nil {
 			limits.minimumBounds = &s.viewport.bounds
 		}
@@ -320,16 +357,18 @@ func renderVideoFrames(ctx context.Context, inputPath string, cacheImages bool, 
 			return err
 		}
 		boxes[i] = doc.ViewBox
-		p.segments[i].matte = videoBoardMatte(theme, p.segments[i].Diagram.Root.Fill)
+		p.segments[i].matte = boardRasterMattes(theme, p.segments[i].Diagram.Root.Fill)
 	}
-	canvas, output, err := p.frameSizes(boxes, authoredScale, size)
+	framing, err := p.frameSizes(boxes, authoredScale, size, ink != nil)
 	if err != nil {
 		return err
 	}
+	canvas, output := framing.camera, framing.output
 	if err := work.checkPixels(output); err != nil {
 		return err
 	}
 	overlay.steps = work.progressSteps(output)
+	overlay.height = framing.lineHeight
 	loadForPlayback := func(index int) (*d2scene.Document, error) {
 		doc, err := load(index)
 		if err != nil {
@@ -342,18 +381,21 @@ func renderVideoFrames(ctx context.Context, inputPath string, cacheImages bool, 
 	}
 	// Rasterize each pose at delivery resolution. Only integer translation
 	// remains when placing it on the shared canvas or inside the letterbox.
-	margin := image.Pt((output.Dx()-canvas.Dx())/2, (output.Dy()-canvas.Dy())/2)
 	var letterboxed *image.RGBA
-	present := func(frame draw.Image, origin image.Point, matte color.Color, start, repeat int) error {
-		origin = origin.Add(margin)
+	present := func(frame draw.Image, origin image.Point, matte rasterMattes, start, repeat int) error {
+		origin = origin.Add(framing.margin)
 		if origin == (image.Point{}) && frame.Bounds() == output {
 			return overlay.emit(ctx, frame, start, repeat, p.frames, emit)
 		}
 		if letterboxed == nil {
 			letterboxed = image.NewRGBA(output)
 		}
-		draw.Draw(letterboxed, output, image.NewUniform(matte), image.Point{}, draw.Src)
-		draw.Draw(letterboxed, frame.Bounds().Add(origin), frame, frame.Bounds().Min, draw.Src)
+		placeVideoFrame(letterboxed, frame, origin, matte.board)
+		if ink != nil && matte.footer != matte.board {
+			footer := output
+			footer.Min.Y = framing.artHeight
+			draw.Draw(letterboxed, footer, image.NewUniform(matte.footer), image.Point{}, draw.Src)
+		}
 		return overlay.emit(ctx, letterboxed, start, repeat, p.frames, emit)
 	}
 	var padded *image.RGBA
@@ -361,7 +403,7 @@ func renderVideoFrames(ctx context.Context, inputPath string, cacheImages bool, 
 	defer workspace.Reset()
 	var active *d2animate.LayerLeg
 	var camera *gifLayerCamera
-	var fromMatte, toMatte color.RGBA
+	var fromMatte, toMatte rasterMattes
 	for i := 0; i < p.frames; {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -388,14 +430,15 @@ func renderVideoFrames(ctx context.Context, inputPath string, cacheImages bool, 
 				active = leg
 			}
 			cameraOptions := options
-			cameraOptions.Background = blendVideoMatte(fromMatte, toMatte, progress)
+			matte := fromMatte.blend(toMatte, progress)
+			cameraOptions.Background = matte.board
 			if padded == nil {
 				padded = image.NewRGBA(canvas)
 			}
 			if err := camera.renderInto(ctx, session, &workspace, cameraOptions, progress, 0, padded); err != nil {
 				return err
 			}
-			if err := present(padded, image.Point{}, cameraOptions.Background, i, repeat); err != nil {
+			if err := present(padded, image.Point{}, matte, i, repeat); err != nil {
 				return err
 			}
 		} else {

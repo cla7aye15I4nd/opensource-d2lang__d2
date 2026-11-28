@@ -89,7 +89,7 @@ export interface RenderOptions {
 }
 
 export interface CompileOptions extends RenderOptions {
-  /** Transition duration in milliseconds (0–600000, default 0). Animates transitions into and out of linked layers during playback or direct navigation, and changes to numeric properties, solid colors, compatible gradients, variables, and grid layouts between steps. Underlines, Markdown strikethroughs, and sketch fill shading can also animate between boards. Overrides vars.d2-config.animate-duration at compile time. */
+  /** Transition duration in milliseconds (0–600000, default 0). Animates transitions into and out of linked layers during playback or direct navigation, and changes to numeric properties, solid colors, compatible gradients, variables, and grid layouts across steps and adjacent scenarios. Underlines, Markdown strikethroughs, and sketch fill shading can also animate between boards. Overrides vars.d2-config.animate-duration at compile time. */
   animateDuration?: number;
   /** Layout engine to use [default: 'dagre'] */
   layout?: "dagre" | "elk" | "tala";
@@ -159,6 +159,8 @@ export interface Legend {
 export type Shape = (Class | SQLTable | Text) & ShapeBase;
 
 export interface ShapeBase {
+  /** Add to pos for a continuous translation. A zero offset marks a whole-unit sample. */
+  motionOffset?: { x: number; y: number };
   motionClip?: MotionClip;
   motionLabelTopLeft?: Point;
   /** Authored body bounds for an anchored label during a node entrance. */
@@ -313,7 +315,7 @@ export interface Connection extends Text {
   animated: boolean;
   tooltip: string;
   icon?: IconURL | null;
-  iconShape?: "circle";
+  iconShape?: "circle" | "square" | "triangle" | "diamond";
   iconBorderRadius?: number;
   iconAnimation?: {
     /** Predecessor in the previous step when parallel connections are renumbered. */
@@ -493,6 +495,8 @@ export interface Scalar {
   value: string;
   /** Fractional part retained when a sampled numeric value is rounded. */
   tweenOffset?: number;
+  /** True for an interpolated left or top coordinate on a sampled graph. */
+  tweenedPin?: boolean;
 }
 
 export interface Style {
