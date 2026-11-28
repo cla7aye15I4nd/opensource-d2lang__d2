@@ -13,8 +13,12 @@
 # stripped module to 10,924,067 bytes (3,716,648 Brotli) with playback progress.
 # Scenario interpolation, connection identity and playback add 7,166 raw
 # bytes and 5,831 Brotli bytes over the connection-icon build in CI.
-# The reviewed gradient, text paint, inheritance and link fixes together
-# measured 10,945,324 raw and 3,725,913 Brotli before scenario playback.
-# Include the scenario delta above and leave room for toolchain variation.
-raw 10970000
-brotli 3740000
+# Continuous SVG motion adds track planning and fractional geometry. With
+# scenario interpolation the module measures 11,034,380 raw and 3,753,779
+# Brotli. The two-sweep marker SVG drops from 76,175 to 2,355 bytes.
+# The reviewed gradient, label paint, board inheritance and link fixes
+# increased the pre-scenario build from 10,924,067 to 10,945,324 bytes raw
+# and from 3,716,648 to 3,725,913 bytes with Brotli. Allow for these fixes
+# alongside continuous motion while retaining the existing toolchain margin.
+raw 11070000
+brotli 3775000

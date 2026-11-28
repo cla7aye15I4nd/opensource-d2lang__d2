@@ -242,7 +242,7 @@ steps: {drain: {vars: {charge: 0%}}}`
 }
 
 func TestRenderScenarioSubtreeAndEndpoint(t *testing.T) {
-	source := `vars: {charge: 100%; d2-config: {animate-interval: 200ms; animate-duration: 80ms}}
+	source := `vars: {charge: 100%; d2-config: {animate-interval: 200ms; animate-duration: 32ms}}
 bar: "${charge}"
 scenarios: {empty: {vars.charge: 0%}; half: {vars.charge: 50%}}`
 	compiled, err := Compile(wasmJSONArgument(t, CompileRequest{FS: map[string]string{"index": source}}))
@@ -266,7 +266,7 @@ scenarios: {empty: {vars.charge: 0%}; half: {vars.charge: 50%}}`
 }
 
 func TestRenderSketchAnimationAfterCompile(t *testing.T) {
-	const source = `vars: {d2-config: {animate-duration: 120ms; animate-interval: 200ms}}
+	const source = `vars: {d2-config: {animate-duration: 50ms; animate-interval: 200ms}}
 replica: Replica {style.fill: white}
 layers: {
   restore: {
@@ -321,7 +321,7 @@ layers: {
 }
 
 func TestRenderSVGAnimateDuration(t *testing.T) {
-	const source = `vars: {d2-config: {animate-duration: 80ms; animate-interval: 100ms}; charge: 100%}
+	const source = `vars: {d2-config: {animate-duration: 100ms; animate-interval: 100ms}; charge: 100%}
 bar: "${charge}"
 steps: {empty: {vars: {charge: 0%}}}`
 	for _, tc := range []struct {

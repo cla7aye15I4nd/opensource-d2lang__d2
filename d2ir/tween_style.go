@@ -224,12 +224,15 @@ func appendDirectChange(changes []tweenChange, path []propertyPathPart, start, e
 	if start == nil || end == nil || start.Primary() == nil || end.Primary() == nil {
 		return changes
 	}
-	// An inherited expression follows its variables. Reassigning the
-	// property (including switching palette entries) animates its values.
-	if end.Primary().binding != nil && start.LastPrimaryKey() == end.LastPrimaryKey() {
+	from, to := start.Primary().Value.ScalarString(), end.Primary().Value.ScalarString()
+	kind := strings.ToLower(end.Name.ScalarString())
+	// An inherited expression follows its variables. Sample compatible
+	// gradient paints from their resolved endpoints so their stops retain
+	// fractional positions even when the same variable rounds in a label.
+	inherited := end.Primary().binding != nil && start.LastPrimaryKey() == end.LastPrimaryKey()
+	if inherited && kind != "fill" && kind != "stroke" && kind != "font-color" {
 		return changes
 	}
-	from, to := start.Primary().Value.ScalarString(), end.Primary().Value.ScalarString()
 	if from == to {
 		// A different class or variable binding can move while this
 		// instance has the same paint or dimensions at both endpoints.
@@ -238,11 +241,10 @@ func appendDirectChange(changes []tweenChange, path []propertyPathPart, start, e
 		}
 		return changes
 	}
-	kind := strings.ToLower(end.Name.ScalarString())
 	var value tweenValue
 	switch kind {
 	case "fill", "stroke", "font-color":
-		paint, ok := newTweenPaint(from, to)
+		paint, ok := newTweenPaint(from, to, inherited)
 		if !ok {
 			return changes
 		}

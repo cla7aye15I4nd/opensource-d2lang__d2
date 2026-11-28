@@ -3,6 +3,7 @@ package d2target
 import (
 	"hash/fnv"
 	"math"
+	"slices"
 	"strings"
 	"unicode/utf8"
 
@@ -255,7 +256,7 @@ func (diagram *Diagram) annotationMarks(cut bool) []AnnotationMark {
 			boxes = make(map[string]*geo.Box, len(diagram.Shapes))
 			for i := range diagram.Shapes {
 				s := &diagram.Shapes[i]
-				boxes[s.ID] = geo.NewBox(geo.NewPoint(float64(s.Pos.X), float64(s.Pos.Y)), float64(s.Width), float64(s.Height))
+				boxes[s.ID] = s.renderedBox()
 			}
 		}
 		return boxes[id]
@@ -267,7 +268,7 @@ func (diagram *Diagram) annotationMarks(cut bool) []AnnotationMark {
 			if a == nil {
 				continue
 			}
-			box := geo.NewBox(geo.NewPoint(float64(s.Pos.X), float64(s.Pos.Y)), float64(s.Width), float64(s.Height))
+			box := s.renderedBox()
 			m := AnnotationMark{ID: s.ID, Paint: a.GetStroke(), Width: AnnotationStrokeWidth, Opacity: 1}
 			var aim *geo.Box
 			switch a.Shape {
@@ -373,6 +374,9 @@ func (diagram *Diagram) annotationMarks(cut bool) []AnnotationMark {
 			default:
 				m.Width = c.RenderedStrokeWidth() + annotationTraceExtraWidth
 				m.Opacity = AnnotationTraceOpacity
+				if c.SrcArrow != NoArrowhead && c.DstArrow == NoArrowhead {
+					slices.Reverse(route)
+				}
 				m.Strokes = [][]geo.Point{route}
 				anchor = geo.NewBox(geo.NewPoint(mid.X-m.Width/2, mid.Y-m.Width/2), m.Width, m.Width)
 			}
@@ -526,7 +530,7 @@ func (diagram *Diagram) noteCollisions(note, target *geo.Box, notes []*geo.Box) 
 	score := 0.
 	for i := range diagram.Shapes {
 		s := &diagram.Shapes[i]
-		box := geo.NewBox(geo.NewPoint(float64(s.Pos.X), float64(s.Pos.Y)), float64(s.Width), float64(s.Height))
+		box := s.renderedBox()
 		if target != nil && boxContains(box, target) {
 			continue
 		}

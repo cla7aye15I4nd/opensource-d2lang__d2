@@ -1,15 +1,21 @@
 package d2compiler
 
 import (
+	"math"
+	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/d2lang/d2/d2graph"
+	"github.com/d2lang/d2/d2target"
+	"github.com/d2lang/d2/lib/animation"
 )
 
 func TestPopulatedScenarioExpansionBudget(t *testing.T) {
 	// Folder detection must not copy the entire inherited board tree a
 	// second time. Keep a bounded budget for the actual inheritance, class
 	// application and tween sampling in this seven-service diagram.
-	const source = `vars: {d2-config: {animate-interval: 200ms; animate-duration: 80ms}; pending: 0}
+	const source = `vars: {d2-config: {animate-interval: 200ms; animate-duration: 32ms}; pending: 0}
 classes: {
   service: {width: 120; height: 60; style: {stroke: black; font-size: 16}}
   healthy.style.fill: green
@@ -54,7 +60,7 @@ scenarios: {
   third: {"layers".style.fill: yellow}
 }`
 	graph, _, err := Compile("quoted.d2", strings.NewReader(source), &CompileOptions{
-		AnimateTweens: new(true), AnimateDuration: new(int64(80)),
+		AnimateTweens: new(true), AnimateDuration: new(int64(32)),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -65,5 +71,45 @@ scenarios: {
 	}
 	if len(third.TweenFrames) != 2 || third.TweenFrames[0].Objects[0].Style.Fill.Value != "green" {
 		t.Fatal("scenario did not start from the drawable sibling")
+	}
+}
+
+func TestScenarioPinsRetainFractionalMotion(t *testing.T) {
+	const source = `vars: {d2-config: {animate-interval: 1200ms; animate-duration: 1s}; y: 10}
+marker: {left: 0; top: ${y}}
+scenarios: {
+  move: {marker.left: 5; vars.y: 5}
+  reset: {}
+}`
+	g, _, err := Compile("pins.d2", strings.NewReader(source), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(g.Scenarios) != 2 {
+		t.Fatalf("got %d scenarios, want two", len(g.Scenarios))
+	}
+	for i, board := range g.Scenarios {
+		if n := len(board.TweenFrames); n != d2target.TweenFrameCount(1000) {
+			t.Fatalf("%s has %d samples", board.Name, n)
+		}
+		for j, frame := range board.TweenFrames {
+			distance := 5 * animation.EaseInOut(float64(j)/float64(len(board.TweenFrames)))
+			if i == 1 {
+				distance = 5 - distance
+			}
+			marker := frame.Objects[0]
+			for _, axis := range []struct {
+				pin  *d2graph.Scalar
+				want float64
+			}{{marker.Left, distance}, {marker.Top, 10 - distance}} {
+				if axis.pin == nil {
+					t.Fatalf("%s sample %d lost its pin", board.Name, j)
+				}
+				value, err := strconv.Atoi(axis.pin.Value)
+				if err != nil || !axis.pin.TweenedPin || math.Abs(float64(value)+axis.pin.TweenOffset-axis.want) > 1e-9 {
+					t.Fatalf("%s sample %d pin = %+v, want %g", board.Name, j, axis.pin, axis.want)
+				}
+			}
+		}
 	}
 }
