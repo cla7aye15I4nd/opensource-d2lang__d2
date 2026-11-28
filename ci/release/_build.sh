@@ -59,8 +59,8 @@ sh_c GOOS="$GOOS" GOARCH="$GOARCH" go build -mod=readonly -pgo=off \
 
 # Allow the bundled TALA engine and native exporters on all six release targets.
 MAX_RELEASE_BINARY_BYTES=${MAX_RELEASE_BINARY_BYTES:-45000000}
-# The macOS/amd64 archive with continuous motion measured 19,036,290 bytes.
-MAX_RELEASE_ARCHIVE_BYTES=${MAX_RELEASE_ARCHIVE_BYTES:-19050000}
+# The combined diagram fixes and continuous motion measured 19,053,470 bytes on macOS/amd64.
+MAX_RELEASE_ARCHIVE_BYTES=${MAX_RELEASE_ARCHIVE_BYTES:-19070000}
 sh_c "$RELEASE_TOOL" verify-binary \
   --path "'$BINARY'" \
   --goos "$GOOS" \
