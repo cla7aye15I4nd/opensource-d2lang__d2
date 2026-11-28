@@ -74,7 +74,7 @@ steps: {change: {vars: {paint: %q}}}`, tc.from, tc.to)
 	}
 }
 
-func TestTweenGradientUsesRenderedOffsets(t *testing.T) {
+func TestTweenGradientInterpolatesBeforeRenderingOffsets(t *testing.T) {
 	m, err := compileTween(t, `vars: {d2-config: {animate-duration: 32ms; animate-interval: 1s}}
 meter.style.fill: "linear-gradient(blue 80%, blue, white 0.3)"
 steps: {change: {meter.style.fill: "linear-gradient(blue 0.2, blue, white 80%)"}}`, d2ir.CompileOptions{})
@@ -91,12 +91,67 @@ steps: {change: {meter.style.fill: "linear-gradient(blue 0.2, blue, white 80%)"}
 		t.Fatal(err)
 	}
 	previous := 0.0
-	for i, want := range []float64{.5, .65, .8} {
+	for i, want := range []float64{.5, .5, .55} {
 		offset, err := g.ColorStops[i].Offset(i, len(g.ColorStops), previous)
 		if err != nil || math.Abs(offset-want) > 1e-12 {
 			t.Fatalf("stop %d in %q: got %v, %v; want %v", i, raw, offset, err, want)
 		}
 		previous = offset
+	}
+}
+
+func TestTweenGradientStopOutsideVisibleRange(t *testing.T) {
+	m, err := compileTween(t, `vars: {d2-config: {animate-duration: 64ms; animate-interval: 1s}}
+meter.style.fill: "linear-gradient(red -100%, blue -100%)"
+steps: {change: {meter.style.fill: "linear-gradient(red 200%, blue 200%)"}}`, d2ir.CompileOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	frames := tweenField(m, "steps", "change").Map().TweenFrames
+	if len(frames) != 4 {
+		t.Fatalf("got %d samples", len(frames))
+	}
+	for i, want := range []string{"0%", "50%", "100%"} {
+		raw := tweenText(t, frames[i+1], "meter", "style", "fill")
+		g, err := color.ParseGradient(raw)
+		if err != nil || g.ColorStops[0].Position != want {
+			t.Fatalf("frame %d = %q, want first stop at %s (%v)", i+1, raw, want, err)
+		}
+	}
+}
+
+func TestTweenGradientVariableStopsMatchLiteralAt60FPS(t *testing.T) {
+	const source = `vars: {d2-config: {animate-duration: 400ms; animate-interval: 1s}; p: -100%; alias: ${p}}
+literal.style.stroke: "linear-gradient(red -100%, gray -100%)"
+bound.style.stroke: "linear-gradient(blue ${alias}, gray ${alias})"
+caption: "Stop ${p}"
+steps: {change: {vars.p: 200%; literal.style.stroke: "linear-gradient(red 200%, gray 200%)"}}`
+	m, err := compileTween(t, source, d2ir.CompileOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	frames := tweenField(m, "steps", "change").Map().TweenFrames
+	if len(frames) != 24 {
+		t.Fatalf("got %d samples, want 24", len(frames))
+	}
+	for i, frame := range frames {
+		want := max(0, min(1, -1+3*float64(i)/float64(len(frames))))
+		for _, shape := range []string{"literal", "bound"} {
+			raw := tweenText(t, frame, shape, "style", "stroke")
+			g, err := color.ParseGradient(raw)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for j, stop := range g.ColorStops {
+				offset, err := stop.Offset(j, len(g.ColorStops), 0)
+				if err != nil || math.Abs(offset-want) > 1e-12 {
+					t.Fatalf("frame %d %s stop %d = %v, want %v (%v)", i, shape, j, offset, want, err)
+				}
+			}
+		}
+	}
+	if got := tweenText(t, frames[9], "caption"); got != "Stop 12%" {
+		t.Fatalf("label at 12.5%% = %q", got)
 	}
 }
 
