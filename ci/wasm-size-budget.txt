@@ -16,4 +16,4 @@
 # Background-aware progress adds color stops for changing boards and a
 # footer-only contrast filter for camera fades. Uniform fills are resolved at export.
 raw 10955000
-brotli 3735000
+brotli 3730000
