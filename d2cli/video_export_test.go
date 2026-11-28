@@ -261,7 +261,11 @@ blank: "" {width: 112; height: 20; style: {fill: transparent; stroke-width: 0}}`
 			white := []byte{255, 255, 255}
 			check(before, 80, 114, white)
 			check(after, 80, 114, []byte{0x16, 0x30, 0x50})
-			check(after, 80, h-1, []byte{0xe9, 0xcf, 0xaf})
+			// Compare the two-pixel line after the same chroma subsampling and encoding.
+			explicit := decode("--animate-progress-color=#E9CFAF")
+			if !bytes.Equal(after[(h-2)*w*3:], explicit[(h-2)*w*3:]) {
+				t.Fatal("automatic progress over the gradient footer differs from explicit #E9CFAF")
+			}
 			check(after, 80, 10, white)
 			check(after, 80, 100, white)
 			// This wide diagram fits above the footer without moving. Its partially
