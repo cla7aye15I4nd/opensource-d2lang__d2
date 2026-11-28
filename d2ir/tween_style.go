@@ -244,15 +244,9 @@ func appendDirectChange(changes []tweenChange, path []propertyPathPart, start, e
 	var value tweenValue
 	switch kind {
 	case "fill", "stroke", "font-color":
-		paint, ok := newTweenPaint(from, to)
+		paint, ok := newTweenPaint(from, to, inherited)
 		if !ok {
 			return changes
-		}
-		if inherited {
-			gradient, ok := paint.(tweenGradient)
-			if !ok || !gradient.movesStops() {
-				return changes
-			}
 		}
 		value = paint
 	case "opacity":

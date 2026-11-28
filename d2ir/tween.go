@@ -297,7 +297,7 @@ func tweenScalarChange(start, end string) (tweenValue, bool) {
 	if number, ok := newTweenNumber(start, end); ok {
 		return number, true
 	}
-	return newTweenPaint(start, end)
+	return newTweenPaint(start, end, false)
 }
 
 func newTweenNumber(start, end string) (tweenNumericValue, bool) {

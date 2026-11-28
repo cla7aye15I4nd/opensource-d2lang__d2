@@ -80,7 +80,7 @@ steps: {
 		}
 		first, quarter, mid := frames[0], frames[len(frames)/4], frames[len(frames)/2]
 		if tweenText(t, first, "bar") != "65%" || tweenText(t, quarter, "bar") != "49%" ||
-			tweenText(t, quarter, "bar", "style", "fill") != "linear-gradient(to right, #2e8b57 48.75%, #00000000 48.75%)" ||
+			tweenText(t, quarter, "bar", "style", "fill") != "linear-gradient(to right, seagreen 48.75%, transparent 48.75%)" ||
 			tweenText(t, quarter, "counter") != "load 0.25" || tweenText(t, mid, "counter") != "load 0.50" {
 			t.Fatalf("interpolated %q, %q, %q", tweenText(t, quarter, "bar"), tweenText(t, quarter, "bar", "style", "fill"), tweenText(t, quarter, "counter"))
 		}
