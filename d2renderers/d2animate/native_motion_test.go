@@ -201,3 +201,46 @@ func TestNativeCubicTranslation(t *testing.T) {
 		})
 	}
 }
+
+func TestNativeCubicSelectedPerObjectAndMove(t *testing.T) {
+	var clock []motionTick
+	var forward, backward []motionPose
+	for move := range 2 {
+		for j := 0; j <= 4; j++ {
+			tm := float64(j) / 4
+			x, y := animation.EaseInOut(tm), tm
+			if move == 1 {
+				x, y = 1-tm, 1-animation.EaseInOut(tm)
+			}
+			at := move*1250 + j*250
+			tick := motionTick{at: float64(at), pct: percentage(100*float64(at)/2500, 9), tween: j < 4}
+			if j == 4 {
+				tick.incomingMS = 1000
+			}
+			clock = append(clock, tick)
+			forward = append(forward, motionPose{x: x, continuous: j < 4})
+			backward = append(backward, motionPose{y: y, continuous: j < 4})
+		}
+	}
+	clock = append(clock, motionTick{at: 2500, pct: "100%"})
+	for _, tc := range []struct {
+		poses      []motionPose
+		first, mid string
+	}{
+		{forward, "0%{transform:translate(0px,0px)", "20%{transform:translate(0.5px,0px)"},
+		{backward, "50%{transform:translate(0px,1px)", "70%{transform:translate(0px,0.5px)"},
+	} {
+		var css bytes.Buffer
+		if !writeNativeShape(&css, "track", clock, tc.poses, 2500) {
+			t.Fatal("missing track")
+		}
+		for _, want := range []string{tc.first + ";animation-timing-function:cubic-bezier(.3333333333,0,.6666666667,0)", tc.mid + ";animation-timing-function:cubic-bezier(.3333333333,1,.6666666667,1)"} {
+			if !strings.Contains(css.String(), want) {
+				t.Errorf("missing %s in %s", want, css.String())
+			}
+		}
+		if strings.Count(css.String(), "cubic-bezier(") != 2 {
+			t.Errorf("unexpected extra eased segment: %s", css.String())
+		}
+	}
+}

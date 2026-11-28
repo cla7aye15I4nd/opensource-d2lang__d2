@@ -107,8 +107,7 @@ func readMotionShape(raw []byte, shape *d2target.Shape) (motionPose, string, boo
 	x, y := float64(shape.Pos.X), float64(shape.Pos.Y)
 	pose := motionPose{x: x, y: y, continuous: shape.MotionOffset != nil}
 	d := xml.NewDecoder(bytes.NewReader(raw))
-	var signature bytes.Buffer
-	enc := xml.NewEncoder(&signature)
+	var signature strings.Builder
 	var path []string
 	var childCounts []int
 	for {
@@ -243,20 +242,29 @@ func readMotionShape(raw []byte, shape *d2target.Shape) (motionPose, string, boo
 					}
 				}
 			}
-			t = el
+			// XML forbids NUL, so it separates names, values, and events
+			// unambiguously without re-encoding and escaping the markup.
+			signature.WriteByte('<')
+			signature.WriteString(el.Name.Local)
+			signature.WriteByte(0)
+			for _, attr := range el.Attr {
+				signature.WriteByte('@')
+				signature.WriteString(attr.Name.Local)
+				signature.WriteByte(0)
+				signature.WriteString(attr.Value)
+				signature.WriteByte(0)
+			}
 		case xml.EndElement:
+			signature.WriteByte('>')
 			path = path[:len(path)-1]
 			childCounts = childCounts[:len(childCounts)-1]
 		case xml.CharData:
+			signature.WriteByte('=')
+			signature.Write(el)
+			signature.WriteByte(0)
 		default:
 			return pose, "", false
 		}
-		if enc.EncodeToken(t) != nil {
-			return pose, "", false
-		}
-	}
-	if enc.Flush() != nil {
-		return pose, "", false
 	}
 	return pose, signature.String(), true
 }
